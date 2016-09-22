@@ -1,27 +1,24 @@
 ﻿/*
-** client.c -- a stream socket client demo
-*/
+ * client.c
+ * TRS Client
+ *
+ * Usage:
+ * ./client hostname
+ */
 
 #include "trs.h"
 #include "client.h"
 
-#define MAXSENDSIZE 256 // max number of bytes we can send at once 
-#define MAXRCVSIZE 256 //max number of bytes we can receive at once
-
+int sockfd, numbytes;
 
 int main(int argc, char *argv[])
 {
-    int sockfd, numbytes;  
-    //char * bufsend;
-    char bufsend[MAXSENDSIZE];
-    char bufrec[MAXRCVSIZE];
-    int sendercount; //to make sure all data is sent
     int sentcount; // result from send() command
-    //char * userdata; // input from user
-    struct addrinfo hints, *servinfo, *p;
+    struct addrinfo *servinfo, *p;
     int rv;
     char s[INET6_ADDRSTRLEN];
     int i;// for loops
+
     //file descriptors of readable files
     fd_set read_fds;
     //file descriptors of writeable files
@@ -77,27 +74,13 @@ int main(int argc, char *argv[])
     fcntl(sockfd, F_SETFL, O_NONBLOCK);
 
 
+    trs_send_connect_request(sockfd, "user1", 5);
 
-    //ask to be part of the chat queue
-    strncpy(bufsend,"CONNECT\0",8);
-    if ((sentcount = send(sockfd,bufsend, 8, 0)) == -1) {
-        perror("send");
-        exit(1);
-    }   
-    memset(&bufsend,0,sizeof(bufsend));
-    //ask to chat with random other partner
-    strncpy(bufsend,"CHAT\0",5);
-    if ((sentcount = send(sockfd,bufsend, 5, 0)) == -1) {
-        perror("send");
-        exit(1);
-    }
-
-     
     while(1) {
     
     //clear sent and received buffers
     memset(&bufsend, 0, MAXSENDSIZE);
-    memset(&bufrec, 0, MAXRCVSIZE);
+    memset(&bufrcv, 0, MAXRCVSIZE);
 
     //clear the sets
     FD_ZERO(&read_fds);
@@ -119,25 +102,22 @@ int main(int argc, char *argv[])
         }
 
         //run through connections looking for data to read
-        for(i=0; i<=sockfd; i++) {
-            if (FD_ISSET(i, &read_fds)){//data incoming
-                if (i == stdin->_fileno)
-                {
-                    //if the data is from the user
-                    fgets(bufrec, MAXRCVSIZE, stdin);
-                    //send the data to the server if chatting
-                    if(chatting)
-                    {
+        int i_fd;
+        for(i_fd=0; i_fd<=sockfd; i_fd++) {
+            if (FD_ISSET(i_fd, &read_fds)){//data incoming
+                // if the data is from the user
+                if (i_fd == stdin->_fileno) {
+                    fgets(bufrcv, MAXRCVSIZE, stdin);
 
-                        if ((sentcount = send(sockfd,bufrec, strlen(bufrec) + 1, 0)) == -1) {
-                            perror("send");
-                            exit(1);
-                        }    
-                    }
-                    memset(&bufrec,0,sizeof(bufrec));
+                    char* null_term_loc = strchr(bufrcv, '\0');
+                    unsigned char message_length = null_term_loc - bufrcv + 1;
+                    trs_send_chat_message(sockfd, bufrcv, message_length);
+                    memset(&bufrcv,0,sizeof(bufrcv));
+                    printf("Sent chat\n");
                 }
 
-                else if (sentcount = recv(i, bufrec, MAXRCVSIZE, 0) <=0) {
+                // closed connection
+                else if (sentcount = recv(i_fd, bufrcv, MAXRCVSIZE, 0) <=0) {
                     //connection closed
                         if (sentcount == 0) {
                             printf("Connection with server closed\n");
@@ -147,20 +127,38 @@ int main(int argc, char *argv[])
                         else {
                             perror("recv");
                         }
-                        close(i);
-                        FD_CLR(i, &read_fds);
+                        close(i_fd);
+                        FD_CLR(i_fd, &read_fds);
                 }
+
+                // data from server
                 else {
-                    //data received from server or cin
-                    //
-                //see if CHAT command was successful
-                    if(strncmp(bufrec,"SUCCESS",7) == 0) {
-                                chatting = 1;
+                    // TODO: Do I need to save the remaining data in the buffer, after parsing one message?
+                    // Probably. Remaining data start of next message.
+
+                    // First byte of the TRS header specifies type of message.
+                    size_t command_byte = bufrcv[0];
+
+                    // Second byte of the TRS head is the length of data remaining.
+                    size_t length_byte = bufrcv[1];
+
+                    switch(command_byte) {
+
+                        case CONNECT_ACKNOWLEDGE:
+                            trs_handle_connect_acknowledge(i_fd, &bufrcv[2], length_byte);
+                            break;
+
+                        case CHAT_ACKNOWLEDGE:
+                            trs_handle_chat_acknowledge(i_fd, &bufrcv[2], length_byte);
+                            break;
+
+                        case CHAT_MESSAGE:
+                            trs_handle_chat_message(i_fd, &bufrcv[2], length_byte);
+                            break;
+
+                        default:
+                            printf("Received message with invalid message type %zu.\n", command_byte);
                     }
-                    if(chatting) {
-                        printf("%s\n",bufrec);
-                    }
-                    memset(&bufrec,0,sizeof(bufrec));
                 }
             }
         }
@@ -184,9 +182,65 @@ int main(int argc, char *argv[])
     //buf[numbytes] = '\0';
 
     //printf("client: received '%s'\n",buf);
-   
+
     close(sockfd);
 
     return 0;
 }
 
+void trs_send_connect_request(int fd, char* username, unsigned char username_length) {
+    memset(&bufsend,0,sizeof(bufsend));
+
+    unsigned char message_type = CONNECT_REQUEST;
+    unsigned char data_length = username_length;
+    char* data = username;
+
+    strncpy(&bufsend[0], &message_type, 1);
+    strncpy(&bufsend[1], &data_length, 1);
+    strncpy(&bufsend[2], data, data_length);
+
+    size_t total_len = 2 + data_length;
+
+    int sent;
+    if ((sent = send(sockfd, bufsend, total_len, 0)) == -1) {
+        perror("send");
+    }
+}
+
+void trs_send_chat_request(int fd) {
+    memset(&bufsend,0,sizeof(bufsend));
+
+    unsigned char message_type = CHAT_REQUEST;
+    unsigned char data_length = 0;
+    char* data = NULL;
+
+    strncpy(&bufsend[0], &message_type, 1);
+    strncpy(&bufsend[1], &data_length, 1);
+    strncpy(&bufsend[2], data, data_length);
+
+    size_t total_len = 2 + data_length;
+
+    int sent;
+    if ((sent = send(fd, bufsend, total_len, 0)) == -1) {
+        perror("send");
+    }
+}
+
+void trs_handle_connect_acknowledge(int sender_fd, char* data, size_t length) {
+    printf("connect ack.\n");
+
+    // TODO: Only want to call this when user types /CHAT
+    trs_send_chat_request(sender_fd);
+}
+
+void trs_handle_chat_acknowledge(int sender_fd, char* data, size_t length) {
+    char* partner_username = (char*)malloc(length);
+    strncpy(partner_username, data, length);
+    printf("Chatting with user:%s.\n", partner_username);
+    // TODO, data should have username of partner.
+}
+
+void trs_handle_chat_message(int sender_fd, char* data, size_t length) {
+    printf("Got chat:\n");
+    printf("%s", data);
+}
