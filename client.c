@@ -11,8 +11,14 @@
 
 int sockfd, numbytes;
 
+int connected_to_trs_server = 0;
+int in_chat_room = 0;
+char* client_username;
+char* chat_partner;
+
 int main(int argc, char *argv[])
 {
+
     int sentcount; // result from send() command
     struct addrinfo *servinfo, *p;
     int rv;
@@ -27,9 +33,11 @@ int main(int argc, char *argv[])
     int chatting = 0;
 
     if (argc != 2) {
-        fprintf(stderr,"usage: client hostname\n");
+        fprintf(stderr,"usage: ./client trs_server_hostname\n");
         exit(1);
     }
+
+    printf("\nTRS Client Started.\n");
 
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_UNSPEC;
@@ -40,17 +48,15 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    // loop through all the results and connect to the first we can
+    // Loop through all the results and connect to the first we can.
     for(p = servinfo; p != NULL; p = p->ai_next) {
         if ((sockfd = socket(p->ai_family, p->ai_socktype,
                 p->ai_protocol)) == -1) {
-            perror("client: socket");
             continue;
         }
 
         if (connect(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
             close(sockfd);
-            perror("client: connect");
             continue;
         }
 
@@ -58,14 +64,15 @@ int main(int argc, char *argv[])
     }
 
     if (p == NULL) {
-        fprintf(stderr, "client: failed to connect\n");
+        fprintf(stderr, "Could not connect to TRS server. Exiting.\n");
         return 2;
     }
 
+
     inet_ntop(p->ai_family, get_in_addr((struct sockaddr *)p->ai_addr),
             s, sizeof s);
-    printf("client: connecting to %s\n", s);
-    
+//    printf("client: connecting to %s\n", s);
+
     freeaddrinfo(servinfo); // all done with this structure
 
 
@@ -74,13 +81,12 @@ int main(int argc, char *argv[])
     fcntl(sockfd, F_SETFL, O_NONBLOCK);
 
 
-    trs_send_connect_request(sockfd, "user1", 5);
+    printf("Type /CONNECT <username> to start.\nType /HELP for all commands.\n");
 
     while(1) {
     
     //clear sent and received buffers
     memset(&bufsend, 0, MAXSENDSIZE);
-    memset(&bufrcv, 0, MAXRCVSIZE);
 
     //clear the sets
     FD_ZERO(&read_fds);
@@ -103,35 +109,62 @@ int main(int argc, char *argv[])
 
         //run through connections looking for data to read
         int i_fd;
-        for(i_fd=0; i_fd<=sockfd; i_fd++) {
+        for(i_fd = 0; i_fd <= sockfd; i_fd++) {
             if (FD_ISSET(i_fd, &read_fds)){//data incoming
-                // if the data is from the user
+
+                // Zero the receiving buffer.
+                memset(&bufrcv, 0, MAXRCVSIZE);
+
+                // Data coming to stdin from user.
                 if (i_fd == stdin->_fileno) {
+
                     fgets(bufrcv, MAXRCVSIZE, stdin);
 
-                    char* null_term_loc = strchr(bufrcv, '\0');
-                    unsigned char message_length = null_term_loc - bufrcv + 1;
-                    trs_send_chat_message(sockfd, bufrcv, message_length);
-                    memset(&bufrcv,0,sizeof(bufrcv));
-                    printf("Sent chat\n");
+                    if (strncmp(bufrcv, "/CONNECT", 8) == 0) {
+                        trs_handle_client_connect(&bufrcv[9]);
+                    }
+
+                    else if (strncmp(bufrcv, "/CHAT", 5) == 0) {
+                        trs_handle_client_chat();
+                    }
+
+                    else if (strncmp(bufrcv, "/QUIT", 5) == 0) {
+                        trs_handle_client_quit();
+                    }
+
+                    else if (strncmp(bufrcv, "/TRANSFER", 9) == 0) {
+                        trs_handle_client_transfer();
+                    }
+
+                    else if (strncmp(bufrcv, "/HELP", 5) == 0) {
+                        trs_handle_client_help();
+                    }
+
+                    else if (in_chat_room == 1) {
+                        trs_handle_client_chat_message(bufrcv);
+                    }
+
+                    else {
+                        printf("Invalid command. Type /HELP for possible commands.\n");
+                    }
                 }
 
                 // closed connection
-                else if (sentcount = recv(i_fd, bufrcv, MAXRCVSIZE, 0) <=0) {
+                else if ((sentcount = recv(i_fd, bufrcv, MAXRCVSIZE, 0)) <=0) {
                     //connection closed
-                        if (sentcount == 0) {
-                            printf("Connection with server closed\n");
-                            chatting = 0;
-                            exit(0);
-                        }
-                        else {
-                            perror("recv");
-                        }
-                        close(i_fd);
-                        FD_CLR(i_fd, &read_fds);
+                    if (sentcount == 0) {
+                        printf("Connection with server closed\n");
+                        chatting = 0;
+                        exit(0);
+                    }
+                    else {
+                        perror("recv");
+                    }
+                    close(i_fd);
+                    FD_CLR(i_fd, &read_fds);
                 }
 
-                // data from server
+                // Received data from TRS server.
                 else {
                     // TODO: Do I need to save the remaining data in the buffer, after parsing one message?
                     // Probably. Remaining data start of next message.
@@ -157,34 +190,15 @@ int main(int argc, char *argv[])
                             break;
 
                         default:
-                            printf("Received message with invalid message type %zu.\n", command_byte);
+                            //printf("Received message with invalid message type %zu.\n", command_byte);
+                            break;
                     }
                 }
             }
         }
     }
 
-            
-
-    
-
-    //if ((sentcount = send(sockfd,bufsend, strlen(bufsend) + 1, 0)) == -1) {
-     //   perror("send");
-    //    exit(1);
-    //}
-    //}
-
-    /*if ((numbytes = recv(sockfd, buf, MAXSENDSIZE-1, 0)) == -1) {
-        perror("recv");
-        exit(1);
-    }*/
-
-    //buf[numbytes] = '\0';
-
-    //printf("client: received '%s'\n",buf);
-
     close(sockfd);
-
     return 0;
 }
 
@@ -226,21 +240,93 @@ void trs_send_chat_request(int fd) {
     }
 }
 
+// Received CONNECT_ACKNOWLEDGE from server.
 void trs_handle_connect_acknowledge(int sender_fd, char* data, size_t length) {
-    printf("connect ack.\n");
-
-    // TODO: Only want to call this when user types /CHAT
-    trs_send_chat_request(sender_fd);
+    connected_to_trs_server = 1;
+    printf("Connected to TRS server.\nType /CHAT to chat with a random person.\n");
 }
 
+// Received CHAT_ACKNOWLEDGE from server.
 void trs_handle_chat_acknowledge(int sender_fd, char* data, size_t length) {
+    in_chat_room = 1;
+
     char* partner_username = (char*)malloc(length);
     strncpy(partner_username, data, length);
-    printf("Chatting with user:%s.\n", partner_username);
-    // TODO, data should have username of partner.
+    chat_partner = partner_username;
+
+    printf("Now chatting with %s.\n", partner_username);
 }
 
+// Received CHAT_MESSAGE from server.
 void trs_handle_chat_message(int sender_fd, char* data, size_t length) {
-    printf("Got chat:\n");
-    printf("%s", data);
+    if (in_chat_room) {
+        printf("%s: %s", chat_partner, data);
+    }
+}
+
+// Received CHAT_FINISH from server.
+void trs_handle_chat_finish(int sender_fd, char* data, size_t length) {
+    in_chat_room = 0;
+    printf("Disconnected from chat room. Type /CHAT to chat with another random person.\n");
+}
+
+// Client typed /CONNECT <username>
+void trs_handle_client_connect(char* username) {
+    if (connected_to_trs_server == 1) {
+        printf("You are already connected to the TRS server.\n");
+        return;
+    }
+
+    // Parse username.
+    char* newline_pos = strchr(username, '\n');
+    *newline_pos = '\0';
+
+    // Store for later.
+    client_username = username;
+
+    // Send only up to null terminator (no null terminator needed).
+    size_t username_len = newline_pos - username;
+
+    // Send the server a connect request with our username.
+    trs_send_connect_request(sockfd, username, username_len);
+}
+
+// Client typed /CHAT
+void trs_handle_client_chat() {
+    if (connected_to_trs_server == 0) {
+        printf("Your are not connected to the TRS server.\nType /CONNECT <username> to start.\n");
+        return;
+    }
+
+    if (in_chat_room == 1) {
+        printf("You are already in a chat room.\nType /QUIT to exit the current chat room first.\n");
+        return;
+    }
+
+    // Send the server a chat request.
+    trs_send_chat_request(sockfd);
+}
+
+void trs_handle_client_help() {
+
+}
+
+void trs_handle_client_quit() {
+
+}
+
+void trs_handle_client_transfer() {
+
+}
+
+void trs_handle_client_chat_message(char * data) {
+
+    char* null_term_loc = strchr(data, '\0');
+    if (null_term_loc == NULL) {
+        printf("Message too long.\n");
+        return;
+    }
+
+    unsigned char message_length = null_term_loc - data + 1;
+    trs_send_chat_message(sockfd, data, message_length);
 }

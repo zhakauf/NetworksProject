@@ -10,15 +10,11 @@
 #include "server.h"
 
 int main(void) {
+    // Start monitoring stdin, and give the admin a prompt.
     initialize_trs();
-    printf("TRS Admin: Type /START to open chat rooms.\n");
-
 
     // Remote IP.
     char remoteIP[INET6_ADDRSTRLEN];
-
-    // Bytes received.
-    int nbytes;
 
     // Main loop.
     while(1) {
@@ -67,24 +63,29 @@ int main(void) {
                             fdmax = new_fd;
                         }
 
-                        printf("New connection from %s on socket %d.\n",
-                               inet_ntop(remoteaddr.ss_family,
-                                         get_in_addr((struct sockaddr*)&remoteaddr),
-                                         remoteIP,
-                                         INET6_ADDRSTRLEN),
-                               new_fd );
+//                        printf("New connection from %s on socket %d.\n",
+//                               inet_ntop(remoteaddr.ss_family,
+//                                         get_in_addr((struct sockaddr*)&remoteaddr),
+//                                         remoteIP,
+//                                         INET6_ADDRSTRLEN),
+//                               new_fd );
                     }
 
                 // Handle data from existing client.
                 } else {
+
+                    // Bytes received.
+                    int nbytes;
+
                     if ((nbytes = recv(i_fd, bufrcv, MAXRCVSIZE, 0)) <= 0) {
 
                         // Error or connection closed by client.
                         if (nbytes == 0) {
-                            printf("Socket %d hung up.\n", i_fd);
+//                            printf("Socket %d hung up.\n", i_fd);
                         } else {
-                            perror("recv");
+//                            perror("recv");
                         }
+
                         close(i_fd);
 
                         trs_disconnect_user(i_fd);
@@ -151,6 +152,8 @@ void initialize_trs() {
 
     // Keep track of the biggest file descriptor.
     fdmax = stdin->_fileno;
+
+    printf("\nTRS Started. \nType /START to open chat rooms.\nType /HELP for other commands.\n");
 }
 
 // Get the server listening.
@@ -217,7 +220,7 @@ void start_server() {
         fdmax = listener;
     }
 
-    printf("TRS Server Started.\n");
+    printf("Now listening on port %s.\n", SERVER_PORT);
 }
 
 // Searches for a user with the given file descriptor.
@@ -276,7 +279,6 @@ int add_user(int fd, char* username) {
     // If this FD is already in the user queue, return failure.
     int search_result = user_search(fd);
     if (search_result != -1) {
-        printf("User already in queue.\n");
         return -1;
     }
 
@@ -285,7 +287,6 @@ int add_user(int fd, char* username) {
     int i;
     for(i = 0; i < MAX_USERS; i++) {
         if (user_queue[i] == NULL) {
-            printf("Slot %d available.\n", i);
             empty_index = i;
             break;
         }
@@ -294,11 +295,9 @@ int add_user(int fd, char* username) {
     // Add the new user to the queue and return the index.
     if (empty_index != -1) {
         user_queue[empty_index] = new_user(fd, username);
-        printf("Added to slot %d.\n", empty_index);
         return empty_index;
     }
 
-    printf("Failed to add.\n");
     return -1;
 }
 
@@ -418,7 +417,6 @@ void trs_disconnect_user(int fd) {
     }
 
     // Free the user struct.
-    printf("Freeing user:%s fd:%d.\n", to_disconnect->username, to_disconnect->fd);
     free(user_queue[user_index]);
     user_queue[user_index] = NULL;
 }
@@ -483,8 +481,6 @@ void trs_handle_connect_request(int sender_fd, char* data, size_t length) {
     strncpy(username, data, length);
     username[length] = '\0';
 
-    printf("In trs_handle_connect_request fd:%d len:%zu username:%s.\n", sender_fd, length, username);
-
     int success = add_user(sender_fd, username);
 
     if (success != -1) {
@@ -497,6 +493,7 @@ void trs_handle_connect_request(int sender_fd, char* data, size_t length) {
     }
 }
 
+// Received message with type CHAT_REQUEST from sender_fd.
 void trs_handle_chat_request(int sender_fd, char* data, size_t length) {
 
     // Make sure they're already in the user queue.
@@ -521,15 +518,12 @@ void trs_handle_chat_request(int sender_fd, char* data, size_t length) {
         return;
     }
 
-    printf("User %s sent chat request.\n", client->username);
-
     // Find an available chat partner.
     int available_user = find_available_user(client);
 
     // If there's no partner available, just mark this user as ready.
     if (available_user == -1){
         client->ready = 1;
-        printf("User %s is ready to chat.\n", client->username);
         return;
     }
 
@@ -554,23 +548,32 @@ void trs_handle_chat_request(int sender_fd, char* data, size_t length) {
     return;
 }
 
+// Received message with type CHAT_MESSAGE from sender_fd.
 void trs_handle_chat_message(int sender_fd, char* data, size_t length) {
+
     // Make sure they're in a channel.
     int channel_index = channel_search_fd(sender_fd);
 
+    // Reply with a CHAT_FAIL message if this sender is not in a channel.
     if (channel_index == -1) {
         trs_send_chat_fail(sender_fd);
     }
 
-    channel* room = channel_queue[channel_index];
+    // Determine the recipient of this chat message.
     int recipient_fd;
+
+    channel* room = channel_queue[channel_index];
     if (room->u_one->fd == sender_fd) {
         recipient_fd = room->u_two->fd;
     } else {
         recipient_fd = room->u_one->fd;
     }
 
+    // Forward the chat message.
     trs_send_chat_message(recipient_fd, data, length);
+
+    // Update the data usage in this channel.
+    room->bytes_sent = room->bytes_sent + (length + 2);
 }
 
 void trs_handle_chat_finish(int sender_fd, char* data, size_t length) {
