@@ -22,7 +22,7 @@ int main(int argc, char *argv[])
     //file descriptors of readable files
     fd_set read_fds;
     //file descriptors of writeable files
-    fd_set write_fds;
+    fd_set master;
     //currently chatting?
     int chatting = 0;
 
@@ -84,15 +84,15 @@ int main(int argc, char *argv[])
 
     //clear the sets
     FD_ZERO(&read_fds);
-    FD_ZERO(&write_fds);
+    FD_ZERO(&master);
 
     //add server socket to readable and writeable sets
     FD_SET(sockfd, &read_fds);
-    FD_SET(sockfd, &write_fds);
+    FD_SET(sockfd, &master);
 
     //add user input to readable and writeable sets
     FD_SET(stdin->_fileno, &read_fds);
-    FD_SET(stdin->_fileno, &write_fds);
+    FD_SET(stdin->_fileno, &master);
     
 
         if(select(sockfd+1, &read_fds, NULL, NULL, NULL) == -1)

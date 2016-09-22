@@ -7,6 +7,8 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <errno.h>
+#include <fcntl.h>
 
 // Size of the receive buffer.
 #define MAXRCVSIZE 256
@@ -38,6 +40,11 @@ char bufsend[MAXSENDSIZE];
 
 // Address info.
 struct addrinfo hints;
+
+// Master fd_set, and temp copy for select() calls.
+fd_set master;
+fd_set read_fds;
+
 
 // Get sockaddr, IPv4 or IPv6:
 // Borrowed directly from Beej: http://beej.us/guide/bgnet/output/html/singlepage/bgnet.html

@@ -32,6 +32,7 @@ typedef struct {
 } channel;
 
 // Prototypes.
+void initialize_trs(void);
 void start_server(void);
 int user_search(int fd);
 int channel_search_users(user* u_one, user* u_two);
@@ -52,16 +53,13 @@ void trs_handle_chat_request(int sender_fd, char* data, size_t length);
 void trs_handle_chat_message(int sender_fd, char* data, size_t length);
 void trs_handle_chat_finish(int sender_fd, char* data, size_t length);
 void trs_handle_binary_message(int sender_fd, char* data, size_t length);
+void trs_handle_admin_start(void);
 
 // List of user pointers.
 user* user_queue[MAX_USERS] = {NULL};
 
 // List of channel pointers.
 channel * channel_queue[MAX_CHANNELS] = {NULL};
-
-// Master fs_set, and temp copy for select() calls.
-fd_set master;
-fd_set read_fds;
 
 // Maximum file descriptor number.
 int fdmax;

@@ -9,12 +9,10 @@
 #include "trs.h"
 #include "server.h"
 
-int main(void)
-{
+int main(void) {
+    initialize_trs();
     printf("TRS Admin: Type /START to open chat rooms.\n");
-    
-    // Boilerplate setup to start selecting connections.
-    start_server();
+
 
     // Remote IP.
     char remoteIP[INET6_ADDRSTRLEN];
@@ -26,7 +24,6 @@ int main(void)
     while(1) {
         // Copy master list.
         read_fds = master;
-
 
         // Populate read_fds.
         if (select(fdmax+1, &read_fds, NULL, NULL, NULL) == -1) {
@@ -42,8 +39,20 @@ int main(void)
             // Here's a connection.
             if (FD_ISSET(i_fd, &read_fds)) {
 
+                // Zero out receive buffer.
+                memset(&bufrcv, 0, MAXRCVSIZE);
+
+                // Handle stdin message.
+                if(i_fd == stdin->_fileno) {
+                    fgets(bufrcv, MAXRCVSIZE, stdin);
+
+                    if (strncmp(bufrcv, "/START\n", 7) == 0) {
+                        trs_handle_admin_start();
+                    }
+                }
+
                 // Handle new connection.
-                if (i_fd == listener) {
+                else if (i_fd == listener) {
                     addrlen = sizeof remoteaddr;
                     new_fd = accept(listener, (struct sockaddr *)&remoteaddr, &addrlen);
 
@@ -68,10 +77,6 @@ int main(void)
 
                 // Handle data from existing client.
                 } else {
-
-                    // Zero out send and receive buffers
-                    memset(&bufrcv, 0, MAXRCVSIZE);
-
                     if ((nbytes = recv(i_fd, bufrcv, MAXRCVSIZE, 0)) <= 0) {
 
                         // Error or connection closed by client.
@@ -123,135 +128,6 @@ int main(void)
                             default:
                                 printf("Received message with invalid message type %zu.\n", command_byte);
                         }
-
-                        // Did they issue a CONNECT command?
-//                        if (strncmp(bufrcv, CONNECT_CMD, CONNECT_CMD_L) == 0) {
-//
-//                            // TODO: handle_connect_cmd(int fd);
-//
-//                            // Extract username.
-//                            // TODO respect max username len.
-//                            char* username_loc = (char*)&bufrcv[CONNECT_CMD_L + 1];
-//                            char* cr_loc = strchr(username_loc, '\r');
-//                            int len = cr_loc - username_loc;
-//                            char *username = (char*)malloc(len + 1);
-//                            memset(username, 0, len+1);
-//                            strncpy(username, username_loc, len);
-//
-//                            int success = add_user(i, username);
-//                            if (success != -1) {
-//                                printf("User %s added.\n", user_queue[success]->username);
-//                            }
-//                            else {
-//                                printf("User %s NOT added.\n", username);
-//                            }
-//                        }
-//
-//                        // Did they issue a CHAT command?
-//                        else if (strncmp(bufrcv, CHAT_CMD, CHAT_CMD_L) == 0) {
-//                            handle_chat(i);
-//                        }
-//
-//                        else if (strncmp(bufrcv, MSG_CMD, MSG_CMD_L) == 0) {
-//                            handle_msg(i);
-//                        }
-
-//                        else {
-//                            printf("got here two\n");
-//                            //the client is in the chat queue is the client asking to chat
-//                            if(strncmp(bufrcv,"CHAT",4) == 0){
-//                                printf("Got here three\n");
-//                                //is there anyone else ready to chat
-//                                user_queue[qsr]->ready = 1;
-//                                for(j=0;j<MAX_USERS;j++){
-//                                    if((user_queue[j]!=0) && (user_queue[j]->ready == 1) && (user_queue[j]->fd != i)){
-//                                        //add the two clients to a chat channel
-//                                        l = 0;
-//                                        user_queue[qsr]->ready = 0;
-//                                        user_queue[j]->ready = 0;
-//                                        printf("Got here four\n");
-//                                        while(l<MAX_CHANNELS){
-//                                            if(channel_queue[l] == 0){
-//                                                channel_queue[l] = new_channel(user_queue[qsr],user_queue[j]);
-//                                                break;
-//                                            }
-//                                            l++;
-//                                        }
-//                                        printf("Got here four\n");
-//                                        memset(&bufsend, 0, sizeof(bufsend));
-//                                        strncpy(bufsend,"SUCCESS\0",8);
-//                                        if (send(i, bufsend, 8, 0) == -1){
-//                                            perror("send");
-//                                        }
-//                                        if (send(j, bufsend, 8, 0) == -1){
-//                                            perror("send");
-//                                        }
-//
-//                                    }
-//                                }
-//                            } else {
-//                                printf("Got here four\n");
-//                                //the client is not asking to chat
-//                                // we got some data from a client
-//                                // is the client in a channel?
-//                                if(qsr = channel_search(channel_queue,MAX_CHANNELS, i) == -1){
-//                                    printf("Got here five\n");
-//                                    //client is not in a chat channel, send a fail
-//                                    memset(&bufsend, 0, MAXSENDSIZE);
-//                                    strncpy(bufsend,"FAIL\0",5);
-//                                    if (send(i, bufsend, 5, 0) == -1) {
-//                                        perror("send");
-//                                    }
-//                                }
-//                                else{
-//                                    //who are we chatting with?
-//                                    if(channel_queue[qsr]->u_one->fd == i) {
-//                                        if(FD_ISSET(channel_queue[qsr]->u_two->fd, &master)){
-//                                            if (send(channel_queue[qsr]->u_two->fd, bufrcv, nbytes, 0) == -1){ // send data to partner
-//                                                perror("send");
-//                                            }
-//                                        }
-//                                        else{
-//                                            //partner not readable, send a fail
-//                                            memset(&bufsend, 0, MAXSENDSIZE);
-//                                            strncpy(bufsend,"FAIL\0",5);
-//                                            if (send(i, bufsend, 5, 0) == -1) {
-//                                                perror("send");
-//                                            }
-//                                        }
-//                                    }
-//                                    if(channel_queue[qsr]->u_two->fd == i){
-//                                        if(FD_ISSET(channel_queue[qsr]->u_one->fd, &master)){
-//                                            if (send(channel_queue[qsr]->u_one->fd, bufrcv, nbytes, 0) == -1){ // send data to partner
-//                                                perror("send");
-//                                            }
-//                                        }
-//                                        else{
-//                                            //partner not readable, send a fail
-//                                            memset(&bufsend, 0, MAXSENDSIZE);
-//                                            strncpy(bufsend,"FAIL\0",5);
-//                                            if (send(i, bufsend, 5, 0) == -1) {
-//                                                perror("send");
-//                                            }
-//                                        }
-//                                    } else {
-//                                        if(FD_ISSET(channel_queue[qsr]->u_one->fd, &master)){
-//                                            if (send(channel_queue[qsr]->u_one->fd, bufrcv, nbytes, 0) == -1){ // send data to partner
-//                                                perror("send");
-//                                            }
-//                                        }
-//                                        else{
-//                                            //partner not readable, send a fail
-//                                            memset(&bufsend, 0, MAXSENDSIZE);
-//                                            strncpy(bufsend,"FAIL\0",5);
-//                                            if (send(i, bufsend, 5, 0) == -1){
-//                                                perror("send");
-//                                            }
-//                                        }
-//                                    }
-//                                }
-//                            }
-//                        }
                     }
                 }
             }
@@ -261,6 +137,22 @@ int main(void)
     return 0;
 }
 
+// Start listening for admin commands.
+void initialize_trs() {
+    // Set stdin fd to nonblocking.
+    fcntl(stdin->_fileno, F_SETFL, O_NONBLOCK);
+
+    // Zero the master and temp file descriptor sets.
+    FD_ZERO(&master);
+    FD_ZERO(&read_fds);
+
+    // Add stdin fd to master fd_set.
+    FD_SET(stdin->_fileno, &master);
+
+    // Keep track of the biggest file descriptor.
+    fdmax = stdin->_fileno;
+}
+
 // Get the server listening.
 void start_server() {
     // For setsockopt() SO_REUSEADDR
@@ -268,10 +160,6 @@ void start_server() {
 
     // Address infos.
     struct addrinfo *ai, *p;
-
-    // Zero the master and temp file descriptor sets.
-    FD_ZERO(&master);
-    FD_ZERO(&read_fds);
 
     // Bind to a TCP socket.
     memset(&hints, 0, sizeof hints);
@@ -320,8 +208,14 @@ void start_server() {
     // Add listener to master fd set.
     FD_SET(listener, &master);
 
+    // Set listener socket to nonblocking.
+    // TODO: Need to do this for each new connection's socket?
+    fcntl(listener, F_SETFL, O_NONBLOCK);
+
     // Keep track of the biggest file descriptor.
-    fdmax = listener;
+    if (listener > fdmax){
+        fdmax = listener;
+    }
 
     printf("TRS Server Started.\n");
 }
@@ -477,95 +371,6 @@ channel * new_channel(user *u_one, user *u_two) {
 
     return c;
 }
-
-//int handle_chat(int fd) {
-//    // Make sure they're already in the user queue.
-//    int result = user_search(fd);
-//
-//    if (result == -1) {
-//        printf("User sent CHAT but has not sent CONNECT <username>.\n");
-//    } else {
-//        user * client = user_queue[result];
-//
-//        // Make sure they're not already in a channel.
-//        result = channel_search_users(client, NULL);
-//
-//        if (result != -1) {
-//            printf("User %s is already in a channel.\n", client->username);
-//            return -1;
-//        }
-//
-//        printf("User %s sent CHAT.\n", client->username);
-//        int available_user = find_available_user(client);
-//        if (available_user == -1){
-//            client->ready = 1;
-//            printf("User %s is ready to chat.\n", client->username);
-//        } else {
-//            user * available = user_queue[available_user];
-//            printf("User %s is already available.\n", available->username);
-//            available->ready = 0;
-//
-//            int new_channel = add_channel(client, available);
-//
-//            memset(&bufsend, 0, sizeof(bufsend));
-//            strncpy(bufsend,"SUCCESS\0",8);
-//            if (send(client->fd, bufsend, 8, 0) == -1){
-//                perror("send");
-//            }
-//            if (send(available->fd, bufsend, 8, 0) == -1){
-//                perror("send");
-//            }
-//
-//            return new_channel;
-//        }
-//    }
-//}
-//
-//int handle_msg(int fd) {
-//    int sender_index = user_search(fd);
-//
-//    if (sender_index == -1) {
-//        printf("Got MSG from client who didn't CONNECT.\n");
-//        return -1;
-//    }
-//
-//    user* sender = user_queue[sender_index];
-//
-//    int channel_index = channel_search_users(sender, NULL);
-//
-//    if (channel_index == -1) {
-//        printf("User was not in a channel.\n");
-//        return -1;
-//    }
-//
-//    channel* chan = channel_queue[channel_index];
-//    user* receiver;
-//
-//    if (chan->u_one == sender) {
-//        receiver = chan->u_two;
-//    } else if (chan->u_two == sender){
-//        receiver = chan->u_one;
-//    }
-//
-//    char* msg_loc = (char*)&bufrcv[MSG_CMD_L + 1];
-//    char* cr_loc = strchr(msg_loc, '\r');
-//    int len = cr_loc - msg_loc;
-//    // TODO: len must be less than buff size
-//
-//    char *msg = (char*)malloc(len + 1);
-//    memset(msg, 0, len+1);
-//    strncpy(msg, msg_loc, len);
-//    msg[len+1] = '\n';
-//
-//    char* null_pos = strchr(msg, '\0');
-//    *null_pos = '\n';
-//
-//    memset(&bufsend, 0, sizeof(bufsend));
-//    strncpy(bufsend, msg, len+1);
-//    if (send(receiver->fd, bufsend, len, 0) == -1){
-//        perror("send");
-//    }
-//}
 
 // Returns the index of a user in the user queue who is waiting to chat, other than client.
 // Returns -1 if no one is available.
@@ -774,4 +579,9 @@ void trs_handle_chat_finish(int sender_fd, char* data, size_t length) {
 
 void trs_handle_binary_message(int sender_fd, char* data, size_t length) {
 
+}
+
+void trs_handle_admin_start() {
+    // Boilerplate setup to start selecting connections.
+    start_server();
 }
