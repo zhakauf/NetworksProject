@@ -27,9 +27,10 @@
 #define CHAT_MESSAGE 0x65
 #define CHAT_FINISH 0x66
 #define BINARY_MESSAGE 0x67
-
 #define CONNECT_FAIL 0x68
 #define CHAT_FAIL 0x69
+#define HELP_REQUEST 0x70
+#define HELP_ACKNOWLEDGE 0x71
 
 // Receiving data buffer.
 char bufrcv[MAXRCVSIZE];
@@ -37,14 +38,12 @@ char bufrcv[MAXRCVSIZE];
 // Outgoing data buffer.
 char bufsend[MAXSENDSIZE];
 
-
 // Address info.
 struct addrinfo hints;
 
 // Master fd_set, and temp copy for select() calls.
 fd_set master;
 fd_set read_fds;
-
 
 // Get sockaddr, IPv4 or IPv6:
 // Borrowed directly from Beej: http://beej.us/guide/bgnet/output/html/singlepage/bgnet.html
@@ -57,25 +56,37 @@ void *get_in_addr(struct sockaddr *sa)
     return &(((struct sockaddr_in6*)sa)->sin6_addr);
 }
 
-// Prototype
-void trs_send_chat_message(int fd, char* message, unsigned char message_length);
+// Generalized function for sending any TRS message.
+void trs_send(int destination_fd, unsigned char message_type, char* data, unsigned char data_length) {
+    // TRS header is 2 bytes.
+    size_t total_len = 2 + data_length;
 
-void trs_send_chat_message(int fd, char* message, unsigned char message_length) {
+    // Zero the send buffer.
     memset(&bufsend, 0, sizeof(bufsend));
 
-    unsigned char message_type = CHAT_MESSAGE;
-    unsigned char data_length = message_length;
-    char* data = message;
-
+    // Copy message type, length, and data.
     strncpy(&bufsend[0], &message_type, 1);
     strncpy(&bufsend[1], &data_length, 1);
     strncpy(&bufsend[2], data, data_length);
 
-    size_t total_len = 2 + data_length;
-
-    int sent;
-    if ((sent = send(fd, bufsend, total_len, 0)) == -1) {
+    // Send it off.
+    int sent_count;
+    if ((sent_count = send(destination_fd, bufsend, total_len, 0)) == -1) {
         perror("send");
     }
 }
 
+// Send a TRS CHAT_MESSAGE type message.
+// Client and server have the same exact implementation for trs_send_chat_message.
+// Because server just forwards what client sends.
+void trs_send_chat_message(int destination_fd, char* message, unsigned char message_length) {
+    trs_send(destination_fd, CHAT_MESSAGE, message, message_length);
+}
+
+// Send a TRS BINARY_MESSAGE type message.
+// Client and server have the same exact implementation for trs_send_binary_message.
+// Because server just forwards what client sends.
+void trs_send_binary_message(int destination_fd, char* message, unsigned char message_length) {
+    // TODO: This function isn't called properly from anywhere.
+    trs_send(destination_fd, BINARY_MESSAGE, message, message_length);
+}

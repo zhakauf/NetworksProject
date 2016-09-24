@@ -58,17 +58,13 @@ int main(void) {
                         // Add fd to master set.
                         FD_SET(new_fd, &master);
 
+                        // Set new socket to non-blocking.
+                        fcntl(new_fd, F_SETFL, O_NONBLOCK);
+
                         // Keep track of max.
                         if (new_fd > fdmax) {
                             fdmax = new_fd;
                         }
-
-//                        printf("New connection from %s on socket %d.\n",
-//                               inet_ntop(remoteaddr.ss_family,
-//                                         get_in_addr((struct sockaddr*)&remoteaddr),
-//                                         remoteIP,
-//                                         INET6_ADDRSTRLEN),
-//                               new_fd );
                     }
 
                 // Handle data from existing client.
@@ -77,20 +73,17 @@ int main(void) {
                     // Bytes received.
                     int nbytes;
 
+                    // Error or connection closed by client.
                     if ((nbytes = recv(i_fd, bufrcv, MAXRCVSIZE, 0)) <= 0) {
 
-                        // Error or connection closed by client.
-                        if (nbytes == 0) {
-//                            printf("Socket %d hung up.\n", i_fd);
-                        } else {
-//                            perror("recv");
-                        }
-
+                        // Close socket.
                         close(i_fd);
 
-                        trs_disconnect_user(i_fd);
+                        // Remove user if they were in the system.
+                        disconnect_user(i_fd);
 
-                        FD_CLR(i_fd, &master); // remove from master set
+                        // Stop tracking this fd.
+                        FD_CLR(i_fd, &master);
 
                     // Got some data from an already connected client
                     } else {
@@ -124,6 +117,10 @@ int main(void) {
 
                             case BINARY_MESSAGE:
                                 trs_handle_binary_message(i_fd, &bufrcv[2], length_byte);
+                                break;
+
+                            case HELP_REQUEST:
+                                trs_handle_help_request(i_fd, &bufrcv[2], length_byte);
                                 break;
 
                             default:
@@ -211,8 +208,7 @@ void start_server() {
     // Add listener to master fd set.
     FD_SET(listener, &master);
 
-    // Set listener socket to nonblocking.
-    // TODO: Need to do this for each new connection's socket?
+    // Set listener socket to non-blocking.
     fcntl(listener, F_SETFL, O_NONBLOCK);
 
     // Keep track of the biggest file descriptor.
@@ -335,7 +331,6 @@ int add_channel(user *u_one, user *u_two) {
     int search_result = channel_search_users(u_one, u_two);
 
     if (search_result != -1) {
-        printf("One of the users already in channel.\n");
         return -1;
     }
 
@@ -344,7 +339,6 @@ int add_channel(user *u_one, user *u_two) {
     int i;
     for(i = 0; i < MAX_CHANNELS; i++) {
         if (channel_queue[i] == NULL) {
-            printf("Channel slot %d available.\n", i);
             empty_index = i;
             break;
         }
@@ -353,7 +347,6 @@ int add_channel(user *u_one, user *u_two) {
     // Add the new channel to the queue and return the index.
     if (empty_index != -1) {
         channel_queue[empty_index] = new_channel(u_one, u_two);
-        printf("Added channel to slot %d.\n", empty_index);
         return empty_index;
     }
 
@@ -385,7 +378,7 @@ int find_available_user(user* client) {
 }
 
 // Connection has ended with this file descriptor.
-void trs_disconnect_user(int fd) {
+void disconnect_user(int fd) {
     int user_index = user_search(fd);
 
     // Nothing to do if that fd wasn't one of our users.
@@ -421,37 +414,27 @@ void trs_disconnect_user(int fd) {
     user_queue[user_index] = NULL;
 }
 
+// Send a TRS CHAT_FINISH type message.
 void trs_send_chat_finish(user* u) {
-
+    // TODO
 }
 
+// Send a TRS CONNECT_FAIL type message.
 void trs_send_connect_fail(int fd) {
-
+    // TODO
 }
 
+// Send a TRS CONNECT_ACKNOWLEDGE type message.
 void trs_send_connect_acknowledge(int fd) {
-    memset(&bufsend, 0, MAXSENDSIZE);
-
-    unsigned char message_type = CONNECT_ACKNOWLEDGE;
-    unsigned char data_length = 0;
-    char* data = NULL;
-
-    strncpy(&bufsend[0], &message_type, 1);
-    strncpy(&bufsend[1], &data_length, 1);
-    strncpy(&bufsend[2], data, data_length);
-
-    size_t total_len = 2 + data_length;
-
-    int sent;
-    if ((sent = send(fd, bufsend, total_len, 0)) == -1){
-        perror("send");
-    }
+    trs_send(fd, CONNECT_ACKNOWLEDGE, NULL, 0);
 }
 
+// Send a TRS CHAT_FAIL type message.
 void trs_send_chat_fail(int fd) {
-
+    // TODO
 }
 
+// Send a TRS CHAT_ACKNOWLEDGE type message.
 void trs_send_chat_acknowledge(int fd, user* chat_partner) {
     char* null_term_loc = strchr(chat_partner->username, '\0');
     unsigned char username_length = null_term_loc - chat_partner->username + 1;
@@ -474,6 +457,7 @@ void trs_send_chat_acknowledge(int fd, user* chat_partner) {
     }
 }
 
+// Received CONNECT_REQUEST from a client.
 void trs_handle_connect_request(int sender_fd, char* data, size_t length) {
 
     // The only data in a connect request is the username.
@@ -493,7 +477,12 @@ void trs_handle_connect_request(int sender_fd, char* data, size_t length) {
     }
 }
 
-// Received message with type CHAT_REQUEST from sender_fd.
+// Received HELP_REQUEST from a client.
+void trs_handle_help_request(int sender_fd, char* data, size_t length) {
+    // TODO
+}
+
+// Received CHAT_REQUEST from a client.
 void trs_handle_chat_request(int sender_fd, char* data, size_t length) {
 
     // Make sure they're already in the user queue.
@@ -501,7 +490,6 @@ void trs_handle_chat_request(int sender_fd, char* data, size_t length) {
 
     // Nothing to do if this user isn't connected.
     if (result == -1) {
-        printf("User sent CHAT but has not sent CONNECT <username>.\n");
         trs_send_chat_fail(sender_fd);
         return;
     }
@@ -513,7 +501,6 @@ void trs_handle_chat_request(int sender_fd, char* data, size_t length) {
     result = channel_search_users(client, NULL);
 
     if (result != -1) {
-        printf("User %s is already in a channel.\n", client->username);
         trs_send_chat_fail(sender_fd);
         return;
     }
@@ -529,14 +516,12 @@ void trs_handle_chat_request(int sender_fd, char* data, size_t length) {
 
     // Connect the client with the available user in a channel.
     user * available = user_queue[available_user];
-    printf("User %s is already available.\n", available->username);
     available->ready = 0;
     client->ready = 0;
 
     // If there's no room left for another channel, send back an error.
     int new_channel = add_channel(client, available);
     if (new_channel == -1) {
-        printf("No room for another channel.\n");
         trs_send_chat_fail(sender_fd);
         trs_send_chat_fail(available->fd);
     }
@@ -548,7 +533,7 @@ void trs_handle_chat_request(int sender_fd, char* data, size_t length) {
     return;
 }
 
-// Received message with type CHAT_MESSAGE from sender_fd.
+// Received CHAT_MESSAGE from a client.
 void trs_handle_chat_message(int sender_fd, char* data, size_t length) {
 
     // Make sure they're in a channel.
@@ -576,14 +561,17 @@ void trs_handle_chat_message(int sender_fd, char* data, size_t length) {
     room->bytes_sent = room->bytes_sent + (length + 2);
 }
 
+// Received CHAT_FINISH from a client.
 void trs_handle_chat_finish(int sender_fd, char* data, size_t length) {
-
+    // TODO
 }
 
+// Received BINARY_MESSAGE from a client.
 void trs_handle_binary_message(int sender_fd, char* data, size_t length) {
-
+    // TODO
 }
 
+// Local user typed /START
 void trs_handle_admin_start() {
     // Boilerplate setup to start selecting connections.
     start_server();
