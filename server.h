@@ -65,3 +65,4 @@ void trs_handle_help_request(int sender_fd, char* data, size_t length);
 
 // Functions to handle commands from local user.
 void trs_handle_admin_start(void);
+

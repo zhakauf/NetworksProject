@@ -74,53 +74,56 @@ int main(void) {
                     int nbytes;
 
                     // Error or connection closed by client.
-                    if ((nbytes = recv(i_fd, bufrcv, MAXRCVSIZE, 0)) <= 0) {
+                    int res;
+                    if ((res = trs_recv(i_fd)) <= 0) {
+                            if (res == 0) {
+                            //print close message
+                            printf("Connection from %d closed\n", i_fd);
 
-                        // Close socket.
-                        close(i_fd);
+                            // Close socket.
+                            close(i_fd);
 
-                        // Remove user if they were in the system.
-                        disconnect_user(i_fd);
+                            // Remove user if they were in the system.
+                            disconnect_user(i_fd);
 
-                        // Stop tracking this fd.
-                        FD_CLR(i_fd, &master);
+                            // Stop tracking this fd.
+                            FD_CLR(i_fd, &master);
+                            }
+                            else {
+                                perror("recv");
+                            }
 
                     // Got some data from an already connected client
                     } else {
 
                         // TODO: Do I need to save the remaining data in the buffer, after parsing one message?
                         // Probably. Remaining data start of next message.
-
-                        // First byte of the TRS header specifies type of message.
-                        size_t command_byte = bufrcv[0];
-
-                        // Second byte of the TRS head is the length of data remaining.
-                        size_t length_byte = bufrcv[1];
+                        
 
                         switch(command_byte) {
 
                             case CONNECT_REQUEST:
-                                trs_handle_connect_request(i_fd, &bufrcv[2], length_byte);
+                                trs_handle_connect_request(i_fd, &trs_packet[2], length_byte);
                                 break;
 
                             case CHAT_REQUEST:
-                                trs_handle_chat_request(i_fd, &bufrcv[2], length_byte);
+                                trs_handle_chat_request(i_fd, &trs_packet[2], length_byte);
                                 break;
 
                             case CHAT_MESSAGE:
-                                trs_handle_chat_message(i_fd, &bufrcv[2], length_byte);
+                                trs_handle_chat_message(i_fd, &trs_packet[2], length_byte);
                                 break;
 
                             case CHAT_FINISH:
-                                trs_handle_chat_finish(i_fd, &bufrcv[2], length_byte);
+                                trs_handle_chat_finish(i_fd, &trs_packet[2], length_byte);
                                 break;
 
                             case BINARY_MESSAGE:
-                                trs_handle_binary_message(i_fd, &bufrcv[2], length_byte);
+                                trs_handle_binary_message(i_fd, &trs_packet[2], length_byte);
                                 break;
 
                             case HELP_REQUEST:
-                                trs_handle_help_request(i_fd, &bufrcv[2], length_byte);
+                                trs_handle_help_request(i_fd, &trs_packet[2], length_byte);
                                 break;
 
                             default:
@@ -436,25 +439,11 @@ void trs_send_chat_fail(int fd) {
 
 // Send a TRS CHAT_ACKNOWLEDGE type message.
 void trs_send_chat_acknowledge(int fd, user* chat_partner) {
+    // Figure out the username length.
     char* null_term_loc = strchr(chat_partner->username, '\0');
     unsigned char username_length = null_term_loc - chat_partner->username + 1;
 
-    memset(&bufsend, 0, MAXSENDSIZE);
-
-    unsigned char message_type = CHAT_ACKNOWLEDGE;
-    unsigned char data_length = username_length;
-    char* data = chat_partner->username;
-
-    strncpy(&bufsend[0], &message_type, 1);
-    strncpy(&bufsend[1], &data_length, 1);
-    strncpy(&bufsend[2], data, data_length);
-
-    size_t total_len = 2 + data_length;
-
-    int sent;
-    if ((sent = send(fd, bufsend, total_len, 0)) == -1){
-        perror("send");
-    }
+    trs_send(fd, CHAT_ACKNOWLEDGE, chat_partner->username, username_length);
 }
 
 // Received CONNECT_REQUEST from a client.
@@ -479,7 +468,15 @@ void trs_handle_connect_request(int sender_fd, char* data, size_t length) {
 
 // Received HELP_REQUEST from a client.
 void trs_handle_help_request(int sender_fd, char* data, size_t length) {
-    // TODO
+    // Send command help to client
+    char *helpbuf = "Enter one of the following commands:\n/CONNECT <username>: \
+                     Connect to chat server with specified username\n/CHAT: Ask \
+                     to chat with random partner\nQUIT: Quit chat session\n\
+                     /TRANSFER:Transfer a file to a chat partner\n/HELP: Reprint \
+                     this help message\n";
+    printf("%lu\n",sizeof(helpbuf));
+    trs_send(sender_fd,HELP_ACKNOWLEDGE, helpbuf, sizeof(helpbuf));
+
 }
 
 // Received CHAT_REQUEST from a client.
@@ -576,3 +573,5 @@ void trs_handle_admin_start() {
     // Boilerplate setup to start selecting connections.
     start_server();
 }
+
+

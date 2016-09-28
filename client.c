@@ -43,7 +43,7 @@ int main(int argc, char *argv[]) {
 
             // Handle possible commands.
             if (strncmp(bufrcv, "/CONNECT", 8) == 0) {
-                trs_handle_client_connect(&bufrcv[9]);
+                trs_handle_client_connect(bufrcv);
             }
 
             else if (strncmp(bufrcv, "/CHAT", 5) == 0) {
@@ -74,7 +74,7 @@ int main(int argc, char *argv[]) {
         // Look for available data from TRS server.
         if (FD_ISSET(server_fd, &master)) {
             int recv_count;
-            if ((recv_count = recv(server_fd, bufrcv, MAXRCVSIZE, 0)) <=0) {
+            if ((recv_count = trs_recv(server_fd)) <= 0) {
 
                 // Connection closed
                 if (recv_count == 0) {
@@ -94,39 +94,33 @@ int main(int argc, char *argv[]) {
                 // TODO: Do I need to save the remaining data in the buffer, after parsing one message?
                 // Probably. Remaining data start of next message.
 
-                // First byte of the TRS header specifies type of message.
-                size_t command_byte = bufrcv[0];
-
-                // Second byte of the TRS head is the length of data remaining.
-                size_t length_byte = bufrcv[1];
-
                 switch(command_byte) {
 
                     case CONNECT_ACKNOWLEDGE:
-                        trs_handle_connect_acknowledge(&bufrcv[2], length_byte);
+                        trs_handle_connect_acknowledge(&trs_packet[2], length_byte);
                         break;
 
                     case CHAT_ACKNOWLEDGE:
-                        trs_handle_chat_acknowledge(&bufrcv[2], length_byte);
+                        trs_handle_chat_acknowledge(&trs_packet[2], length_byte);
                         break;
 
                     case CHAT_MESSAGE:
-                        trs_handle_chat_message(&bufrcv[2], length_byte);
+                        trs_handle_chat_message(&trs_packet[2], length_byte);
                         break;
 
                     case BINARY_MESSAGE:
-                        trs_handle_binary_message(&bufrcv[2], length_byte);
+                        trs_handle_binary_message(&trs_packet[2], length_byte);
                         break;
 
                     case CONNECT_FAIL:
-                        trs_handle_connect_fail(&bufrcv[2], length_byte);
+                        trs_handle_connect_fail(&trs_packet[2], length_byte);
                         break;
 
                     case CHAT_FAIL:
-                        trs_handle_chat_fail(&bufrcv[2], length_byte);
+                        trs_handle_chat_fail(&trs_packet[2], length_byte);
 
                     case HELP_ACKNOWLEDGE:
-                        trs_handle_help_acknowledge(&bufrcv[2], length_byte);
+                        trs_handle_help_acknowledge(&trs_packet[2], length_byte);
 
                     default:
                         printf("Received message with invalid message type %zu.\n", command_byte);
@@ -256,7 +250,8 @@ void trs_handle_chat_finish(char* data, size_t length) {
 
 // Received HELP_ACKNOWLEDGE from server.
 void trs_handle_help_acknowledge(char* data, size_t length) {
-    // TODO Print out the content.
+    // Print out the content.
+    printf("%s",data);
 }
 
 // Received CONNECT_FAIL from server.
@@ -278,24 +273,35 @@ void trs_handle_chat_fail(char* data, size_t length) {
 }
 
 // Client typed /CONNECT <username>
-void trs_handle_client_connect(char* username) {
+void trs_handle_client_connect(char* stdinbuf) {
     if (connected_to_trs_server == 1) {
         printf("You are already connected to the TRS server.\n");
         return;
     }
 
+    //Make sure a space character is before the username
+    char * space_pos = strrchr(stdinbuf, ' ');
+    if (space_pos == NULL) {
+        printf("Usage: /CONNECT <username>\n");
+        return;
+    }
+
     // Parse username.
-    char* newline_pos = strchr(username, '\n');
+    char* newline_pos = strchr(stdinbuf, '\n');
+    if((newline_pos - space_pos) < 2) {
+        printf("Usage: /CONNECT <username>\n");
+        return;
+    }
     *newline_pos = '\0';
 
     // Store for later.
-    client_username = username;
+    client_username = space_pos + 1;
 
     // Send only up to null terminator (no null terminator needed).
-    size_t username_len = newline_pos - username;
+    size_t username_len = newline_pos - space_pos - 1;
 
     // Send the server a connect request with our username.
-    trs_send_connect_request(username, username_len);
+    trs_send_connect_request(client_username, username_len);
 }
 
 // Client typed /CHAT

@@ -33,7 +33,7 @@ void trs_handle_chat_fail(char* data, size_t length);
 void trs_handle_binary_message(char* data, size_t length);
 
 // Handle input from user.
-void trs_handle_client_connect(char* username);
+void trs_handle_client_connect(char* stdinbuf);
 void trs_handle_client_chat(void);
 void trs_handle_client_quit(void);
 void trs_handle_client_transfer(void);
