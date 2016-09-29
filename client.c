@@ -93,7 +93,6 @@ int main(int argc, char *argv[]) {
             } else {
                 // TODO: Do I need to save the remaining data in the buffer, after parsing one message?
                 // Probably. Remaining data start of next message.
-
                 switch(command_byte) {
 
                     case CONNECT_ACKNOWLEDGE:
@@ -118,9 +117,11 @@ int main(int argc, char *argv[]) {
 
                     case CHAT_FAIL:
                         trs_handle_chat_fail(&trs_packet[2], length_byte);
+                        break;
 
                     case HELP_ACKNOWLEDGE:
                         trs_handle_help_acknowledge(&trs_packet[2], length_byte);
+                        break;
 
                     default:
                         printf("Received message with invalid message type %zu.\n", command_byte);

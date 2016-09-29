@@ -469,13 +469,14 @@ void trs_handle_connect_request(int sender_fd, char* data, size_t length) {
 // Received HELP_REQUEST from a client.
 void trs_handle_help_request(int sender_fd, char* data, size_t length) {
     // Send command help to client
-    char *helpbuf = "Enter one of the following commands:\n/CONNECT <username>: \
-                     Connect to chat server with specified username\n/CHAT: Ask \
-                     to chat with random partner\nQUIT: Quit chat session\n\
-                     /TRANSFER:Transfer a file to a chat partner\n/HELP: Reprint \
-                     this help message\n";
-    printf("%lu\n",sizeof(helpbuf));
-    trs_send(sender_fd,HELP_ACKNOWLEDGE, helpbuf, sizeof(helpbuf));
+    char *helpbuf = "Enter one of the following commands:\n\t/CONNECT <username>: \
+Connect to chat server with specified username\n\t/CHAT: Ask \
+to chat with random partner\n\t/QUIT: Quit chat session\n\t\
+/TRANSFER:Transfer a file to a chat partner\n\t/HELP: Reprint \
+this help message\n\0";
+
+    int helplen = strrchr(helpbuf,'\0') - helpbuf;
+    trs_send(sender_fd,HELP_ACKNOWLEDGE, helpbuf, helplen);
 
 }
 

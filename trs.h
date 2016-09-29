@@ -105,7 +105,12 @@ void trs_send_binary_message(int destination_fd, char* message, unsigned char me
 //If the buffer contains only part of one message, receive again and send the full message to the handler
 int trs_recv(int sender_fd){
     //delete contents of trs_packet
-    memset(&trs_packet, 0, sizeof(trs_packet));
+    int trs_len = 0;
+    char * trsend = NULL;
+    if ((trsend = strrchr(trs_packet, '\0')) == NULL) {
+        trs_len = trsend - trs_packet;
+    }
+    memset(&trs_packet, 0, trs_len);
     int got;
     //get command type from message
     if((got = recv(sender_fd, &command_byte, 1, 0)) <= 0) {
@@ -138,9 +143,10 @@ int trs_recv(int sender_fd){
             }
         }
     }
+
     //copy data to trs_packet
     memcpy(&trs_packet, &command_byte,1);
-    memcpy(&trs_packet[1], &command_byte, 1);
+    memcpy(&trs_packet[1], &length_byte, 1);
     memcpy(&trs_packet[2], &bufrcv, length_byte);
     //successful data transfer
     return 1;
