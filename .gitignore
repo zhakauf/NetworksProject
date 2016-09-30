@@ -1,0 +1,6 @@
+client
+server
+*.o
+.idea/
+.vagrant/
+machines/
