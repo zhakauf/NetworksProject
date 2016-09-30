@@ -10,11 +10,17 @@
 #include "server.h"
 
 int main(void) {
+
     // Start monitoring stdin, and give the admin a prompt.
     initialize_trs();
 
     // Remote IP.
     char remoteIP[INET6_ADDRSTRLEN];
+
+    // Speed things up in dev.
+    if (DEBUG == 1) {
+        trs_handle_admin_start();
+    }
 
     // Main loop.
     while(1) {
@@ -35,15 +41,47 @@ int main(void) {
             // Here's a connection.
             if (FD_ISSET(i_fd, &read_fds)) {
 
-                // Zero out receive buffer.
-                memset(&bufrcv, 0, MAXRCVSIZE);
-
                 // Handle stdin message.
                 if(i_fd == stdin->_fileno) {
-                    fgets(bufrcv, MAXRCVSIZE, stdin);
+                    fgets(stdin_buffer, MAX_TRS_DATA_LEN, stdin);
 
-                    if (strncmp(bufrcv, "/START\n", 7) == 0) {
+                    // User typed /START
+                    if (strncmp(stdin_buffer, "/START\n", 7) == 0) {
                         trs_handle_admin_start();
+                    }
+
+                    // User typed /END
+                    else if (strncmp(stdin_buffer, "/END\n", 5) == 0) {
+                        trs_handle_admin_end();
+                    }
+
+                    // User typed /STATS
+                    else if (strncmp(stdin_buffer, "/STATS\n", 7) == 0) {
+                        trs_handle_admin_stats();
+                    }
+
+                    // User typed /THROWOUT
+                    else if (strncmp(stdin_buffer, "/THROWOUT", 9) == 0) {
+                        trs_handle_admin_throwout();
+                    }
+
+                    // User typed /BLOCK
+                    else if (strncmp(stdin_buffer, "/BLOCK", 6) == 0) {
+                        trs_handle_admin_block();
+                    }
+
+                    // User typed /UNBLOCK
+                    else if (strncmp(stdin_buffer, "/UNBLOCK", 8) == 0) {
+                        trs_handle_admin_unblock();
+                    }
+
+                    // User typed /UNBLOCK
+                    else if (strncmp(stdin_buffer, "/HELP", 5) == 0) {
+                        trs_handle_admin_help();
+                    }
+
+                    else {
+                        printf("Illegal command. Type /HELP to see commands.\n");
                     }
                 }
 
@@ -70,16 +108,12 @@ int main(void) {
                 // Handle data from existing client.
                 } else {
 
-                    // Bytes received.
-                    int nbytes;
-
                     // Error or connection closed by client.
-                    int res;
-                    if ((res = trs_recv(i_fd)) <= 0) {
-                            if (res == 0) {
-                            //print close message
-                            printf("Connection from %d closed\n", i_fd);
+                    int trs_recv_result;
+                    if ((trs_recv_result = trs_recv(i_fd)) < 1) {
 
+                        // Connection closed.
+                        if (trs_recv_result == 0) {
                             // Close socket.
                             close(i_fd);
 
@@ -88,42 +122,43 @@ int main(void) {
 
                             // Stop tracking this fd.
                             FD_CLR(i_fd, &master);
-                            }
-                            else {
-                                perror("recv");
-                            }
+                        }
+                        // Error in recv.
+                        else {
+                            perror("recv");
+                        }
 
-                    // Got some data from an already connected client
+                    // Handle some data from an already connected client
                     } else {
-
-                        // TODO: Do I need to save the remaining data in the buffer, after parsing one message?
-                        // Probably. Remaining data start of next message.
-                        
 
                         switch(command_byte) {
 
                             case CONNECT_REQUEST:
-                                trs_handle_connect_request(i_fd, &trs_packet[2], length_byte);
+                                trs_handle_connect_request(i_fd);
                                 break;
 
                             case CHAT_REQUEST:
-                                trs_handle_chat_request(i_fd, &trs_packet[2], length_byte);
+                                trs_handle_chat_request(i_fd);
                                 break;
 
                             case CHAT_MESSAGE:
-                                trs_handle_chat_message(i_fd, &trs_packet[2], length_byte);
+                                trs_handle_chat_message(i_fd);
                                 break;
 
                             case CHAT_FINISH:
-                                trs_handle_chat_finish(i_fd, &trs_packet[2], length_byte);
+                                trs_handle_chat_finish(i_fd);
                                 break;
 
                             case BINARY_MESSAGE:
-                                trs_handle_binary_message(i_fd, &trs_packet[2], length_byte);
+                                trs_handle_binary_message(i_fd);
                                 break;
 
                             case HELP_REQUEST:
-                                trs_handle_help_request(i_fd, &trs_packet[2], length_byte);
+                                trs_handle_help_request(i_fd);
+                                break;
+
+                            case TRANSFER_START:
+                                trs_handle_transfer_start(i_fd);
                                 break;
 
                             default:
@@ -134,8 +169,6 @@ int main(void) {
             }
         }
     }
-    
-    return 0;
 }
 
 // Start listening for admin commands.
@@ -323,6 +356,7 @@ user * new_user(int fd, char* username) {
     u->fd = fd;
     u->ready = 0;
     u->username = username;
+    u->blocked = 0;
 
     return u;
 }
@@ -372,7 +406,10 @@ channel * new_channel(user *u_one, user *u_two) {
 int find_available_user(user* client) {
     int i;
     for(i = 0; i < MAX_USERS; i++) {
-        if ((user_queue[i] != NULL) && (user_queue[i] != client) && (user_queue[i]->ready == 1)) {
+        if ((user_queue[i] != NULL) &&
+                (user_queue[i] != client) &&
+                (user_queue[i]->ready == 1) &&
+                (user_queue[i]->blocked == 0)) {
             return i;
         }
     }
@@ -419,12 +456,17 @@ void disconnect_user(int fd) {
 
 // Send a TRS CHAT_FINISH type message.
 void trs_send_chat_finish(user* u) {
-    // TODO
+    trs_send(u->fd, CHAT_FINISH, NULL, 0);
 }
 
 // Send a TRS CONNECT_FAIL type message.
 void trs_send_connect_fail(int fd) {
-    // TODO
+    char* error = "Too many users already connected.\n\0";
+
+    // Length includes null terminator.
+    size_t error_len = strchr(error, '\0') - error + 1;
+
+    trs_send(fd, CONNECT_FAIL, error, error_len);
 }
 
 // Send a TRS CONNECT_ACKNOWLEDGE type message.
@@ -434,54 +476,67 @@ void trs_send_connect_acknowledge(int fd) {
 
 // Send a TRS CHAT_FAIL type message.
 void trs_send_chat_fail(int fd) {
-    // TODO
+    char* error = "Unable to request chat room.\n\0";
+
+    // Length includes null terminator.
+    size_t error_len = strchr(error, '\0') - error + 1;
+
+    trs_send(fd, CHAT_FAIL, error, error_len);
+}
+
+// Send a TRS HELP_ACKNOWLEDGE type message.
+void trs_send_help_acknowledge(int fd, char* data, size_t length) {
+    trs_send(fd, HELP_ACKNOWLEDGE, data, length);
 }
 
 // Send a TRS CHAT_ACKNOWLEDGE type message.
 void trs_send_chat_acknowledge(int fd, user* chat_partner) {
     // Figure out the username length.
     char* null_term_loc = strchr(chat_partner->username, '\0');
+
+    // Length includes null terminator.
     unsigned char username_length = null_term_loc - chat_partner->username + 1;
 
     trs_send(fd, CHAT_ACKNOWLEDGE, chat_partner->username, username_length);
 }
 
 // Received CONNECT_REQUEST from a client.
-void trs_handle_connect_request(int sender_fd, char* data, size_t length) {
+void trs_handle_connect_request(int sender_fd) {
 
     // The only data in a connect request is the username.
-    char* username = (char*)malloc(length + 1);
-    strncpy(username, data, length);
-    username[length] = '\0';
+    char* username = (char*)malloc(length_byte + 1);
+    strncpy(username, TRS_DATA, length_byte);
+    username[length_byte] = '\0';
 
+    // Try to add a new chat user.
     int success = add_user(sender_fd, username);
-
     if (success != -1) {
         trs_send_connect_acknowledge(sender_fd);
     }
 
     else {
-        printf("User NOT added.\n");
         trs_send_connect_fail(sender_fd);
     }
 }
 
 // Received HELP_REQUEST from a client.
-void trs_handle_help_request(int sender_fd, char* data, size_t length) {
-    // Send command help to client
-    char *helpbuf = "Enter one of the following commands:\n\t/CONNECT <username>: \
-Connect to chat server with specified username\n\t/CHAT: Ask \
-to chat with random partner\n\t/QUIT: Quit chat session\n\t\
-/TRANSFER:Transfer a file to a chat partner\n\t/HELP: Reprint \
-this help message\n\0";
+void trs_handle_help_request(int sender_fd) {
+    // Data is list of accepted commands and their descriptions.
+    char *data = "Commands:\n\
+/CONNECT <username>\tConnect as <username>.\n\
+/CHAT\t\t\tAsk to chat with random partner.\n\
+/QUIT\t\t\tQuit chat session.\n\
+/TRANSFER <filepath>\tTransfer a file to a chat partner.\n\
+/HELP\t\t\tReprint this help message.\n\0";
 
-    int helplen = strrchr(helpbuf,'\0') - helpbuf;
-    trs_send(sender_fd,HELP_ACKNOWLEDGE, helpbuf, helplen);
+    // Length does not include null terminator.
+    int len = strrchr(data, '\0') - data;
 
+    trs_send_help_acknowledge(sender_fd, data, len);
 }
 
 // Received CHAT_REQUEST from a client.
-void trs_handle_chat_request(int sender_fd, char* data, size_t length) {
+void trs_handle_chat_request(int sender_fd) {
 
     // Make sure they're already in the user queue.
     int result = user_search(sender_fd);
@@ -512,6 +567,11 @@ void trs_handle_chat_request(int sender_fd, char* data, size_t length) {
         return;
     }
 
+    // If the sender is blocked, don't connect them.
+    if (client->blocked == 1) {
+        return;
+    }
+
     // Connect the client with the available user in a channel.
     user * available = user_queue[available_user];
     available->ready = 0;
@@ -527,24 +587,21 @@ void trs_handle_chat_request(int sender_fd, char* data, size_t length) {
     // Notify both users that they are in a chat.
     trs_send_chat_acknowledge(sender_fd, available);
     trs_send_chat_acknowledge(available->fd, client);
-
-    return;
 }
 
 // Received CHAT_MESSAGE from a client.
-void trs_handle_chat_message(int sender_fd, char* data, size_t length) {
+void trs_handle_chat_message(int sender_fd) {
 
     // Make sure they're in a channel.
     int channel_index = channel_search_fd(sender_fd);
 
-    // Reply with a CHAT_FAIL message if this sender is not in a channel.
+    // Ignore chat message if sender isn't in a channel.
     if (channel_index == -1) {
-        trs_send_chat_fail(sender_fd);
+        return;
     }
 
     // Determine the recipient of this chat message.
     int recipient_fd;
-
     channel* room = channel_queue[channel_index];
     if (room->u_one->fd == sender_fd) {
         recipient_fd = room->u_two->fd;
@@ -553,19 +610,68 @@ void trs_handle_chat_message(int sender_fd, char* data, size_t length) {
     }
 
     // Forward the chat message.
-    trs_send_chat_message(recipient_fd, data, length);
+    trs_send_chat_message(recipient_fd, TRS_DATA, length_byte);
 
     // Update the data usage in this channel.
-    room->bytes_sent = room->bytes_sent + (length + 2);
+    room->bytes_sent = room->bytes_sent + (length_byte + 2);
+}
+
+void trs_handle_transfer_start(int sender_fd) {
+    // Make sure they're in a channel.
+    int channel_index = channel_search_fd(sender_fd);
+
+    // Ignore chat message if sender isn't in a channel.
+    if (channel_index == -1) {
+        return;
+    }
+
+    // Determine the recipient of this chat message.
+    int recipient_fd;
+    channel* room = channel_queue[channel_index];
+    if (room->u_one->fd == sender_fd) {
+        recipient_fd = room->u_two->fd;
+    } else {
+        recipient_fd = room->u_one->fd;
+    }
+
+    int i;
+    for (i = 0; i < length_byte + 2; i++) {
+        printf("%02X\n", trs_packet[i]);
+    }
+
+    // Forward the message.
+    trs_send_transfer_start(recipient_fd, TRS_DATA, length_byte);
 }
 
 // Received CHAT_FINISH from a client.
-void trs_handle_chat_finish(int sender_fd, char* data, size_t length) {
-    // TODO
+void trs_handle_chat_finish(int sender_fd) {
+    // Make sure they're in a channel.
+    int channel_index = channel_search_fd(sender_fd);
+
+    // Ignore this message if they're not in a chat channel.
+    if (channel_index == -1) {
+        return;
+    }
+
+    // Determine the chat partner of the sender.
+    user* partner;
+    channel* room = channel_queue[channel_index];
+    if (room->u_one->fd == sender_fd) {
+        partner = room->u_two;
+    } else {
+        partner = room->u_one;
+    }
+
+    // Notify the partner that chat has ended.
+    trs_send_chat_finish(partner);
+
+    // Destroy the channel.
+    free(channel_queue[channel_index]);
+    channel_queue[channel_index] = NULL;
 }
 
 // Received BINARY_MESSAGE from a client.
-void trs_handle_binary_message(int sender_fd, char* data, size_t length) {
+void trs_handle_binary_message(int sender_fd) {
     // TODO
 }
 
@@ -575,4 +681,225 @@ void trs_handle_admin_start() {
     start_server();
 }
 
+// Local user typed /END
+void trs_handle_admin_end() {
 
+    // Notify all chatting users that chat is ending, and destroy channels.
+    int channel_index;
+    for (channel_index = 0; channel_index < MAX_CHANNELS; channel_index++) {
+        channel *i_channel = channel_queue[channel_index];
+
+        if (i_channel != NULL) {
+            trs_send_chat_finish(i_channel->u_one);
+            trs_send_chat_finish(i_channel->u_two);
+        }
+
+        free(i_channel);
+        channel_queue[channel_index] = NULL;
+    }
+
+    // Notify user that all chats have been disconnected.
+    printf("All chat rooms ended.\n");
+}
+
+// Local user typed /STATS
+void trs_handle_admin_stats() {
+    int connected_users = 0;
+    int user_index;
+    for (user_index = 0; user_index < MAX_USERS; user_index++) {
+        user* i_user = user_queue[user_index];
+
+        if (i_user != NULL) {
+            if (connected_users == 0) {
+                printf("Connected users:\n");
+            }
+
+            printf("\t%d  username:%s  fd:%d  ready:%d  blocked:%d\n",
+                   connected_users++,
+                   i_user->username,
+                   i_user->fd,
+                   i_user->ready,
+                   i_user->blocked
+            );
+        }
+    }
+
+    if (connected_users == 0) {
+        printf("No users connected.\n");
+        return;
+    }
+
+    int active_channels = 0;
+    int channel_index;
+    for (channel_index = 0; channel_index < MAX_CHANNELS; channel_index++) {
+        channel *i_channel = channel_queue[channel_index];
+
+        if (i_channel != NULL) {
+            if (active_channels == 0) {
+                printf("\nActive channels:\n");
+            }
+
+            printf("\t%d  u_one:%s  u_one_fd:%d  u_two:%s  u_two_fd:%d  data_used:%lu\n",
+                   active_channels++,
+                   i_channel->u_one->username,
+                   i_channel->u_one->fd,
+                   i_channel->u_two->username,
+                   i_channel->u_two->fd,
+                   i_channel->bytes_sent
+            );
+        }
+    }
+
+    if (active_channels == 0) {
+        printf("No active channels.\n");
+    }
+}
+
+// Local user typed /THROWOUT
+void trs_handle_admin_throwout() {
+
+    // Make sure a space character is before a file descriptor.
+    char * space_pos = strrchr(stdin_buffer, ' ');
+    if (space_pos == NULL) {
+        printf("Usage: /THROWOUT <user_fd>\n");
+        return;
+    }
+
+    // Make sure there's an argument.
+    char* newline_pos = strchr(stdin_buffer, '\n');
+    if((newline_pos - space_pos) < 2) {
+        printf("Usage: /THROWOUT <user_fd>\n");
+        return;
+    }
+    *newline_pos = '\0';
+
+    // Make sure parsed fd is legal.
+    int target_fd = atoi(&stdin_buffer[10]);
+    if (target_fd == 0) {
+        printf("Invalid argument given.\n");
+        return;
+    }
+
+    // Make sure this user exists.
+    int user_index = user_search(target_fd);
+    if (user_index == -1) {
+        printf("No user with file descriptor %d.\n", target_fd);
+        return;
+    }
+
+    // Check if they're in a channel.
+    user* target_user = user_queue[user_index];
+    int channel_index = channel_search_fd(target_fd);
+
+    if (channel_index == -1) {
+        printf("User %s with fd %d is not in any chat channel.\n", target_user->username, target_fd);
+        return;
+    }
+    // Notify admin.
+    printf("Ended chat for user %s with fd %d.\n", target_user->username, target_fd);
+
+    // Notify both users that chat is ending.
+    channel *target_channel = channel_queue[channel_index];
+    trs_send_chat_finish(target_channel->u_one);
+    trs_send_chat_finish(target_channel->u_two);
+
+    // Destroy channel.
+    free(target_channel);
+    channel_queue[channel_index] = NULL;
+}
+
+// Local user typed /BLOCK
+void trs_handle_admin_block() {
+    // Make sure a space character is before a file descriptor.
+    char * space_pos = strrchr(stdin_buffer, ' ');
+    if (space_pos == NULL) {
+        printf("Usage: /BLOCK <user_fd>\n");
+        return;
+    }
+
+    // Make sure there's an argument.
+    char* newline_pos = strchr(stdin_buffer, '\n');
+    if((newline_pos - space_pos) < 2) {
+        printf("Usage: /BLOCK <user_fd>\n");
+        return;
+    }
+    *newline_pos = '\0';
+
+    // Make sure parsed fd is legal.
+    int target_fd = atoi(&stdin_buffer[7]);
+    if (target_fd == 0) {
+        printf("Invalid argument given.\n");
+        return;
+    }
+
+    // Make sure this user exists.
+    int user_index = user_search(target_fd);
+    if (user_index == -1) {
+        printf("No user with file descriptor %d.\n", target_fd);
+        return;
+    }
+
+    // Block the user.
+    user *target_user = user_queue[user_index];
+    target_user->blocked = 1;
+
+    // Notify admin.
+    printf("User %s with fd %d blocked from joining new chat rooms.\n",
+           target_user->username,
+           target_fd
+    );
+}
+
+// Local user typed /UNBLOCK
+void trs_handle_admin_unblock() {
+    // Make sure a space character is before a file descriptor.
+    char * space_pos = strrchr(stdin_buffer, ' ');
+    if (space_pos == NULL) {
+        printf("Usage: /UNBLOCK <user_fd>\n");
+        return;
+    }
+
+    // Make sure there's an argument.
+    char* newline_pos = strchr(stdin_buffer, '\n');
+    if((newline_pos - space_pos) < 2) {
+        printf("Usage: /UNBLOCK <user_fd>\n");
+        return;
+    }
+    *newline_pos = '\0';
+
+    // Make sure parsed fd is legal.
+    int target_fd = atoi(&stdin_buffer[9]);
+    if (target_fd == 0) {
+        printf("Invalid argument given.\n");
+        return;
+    }
+
+    // Make sure this user exists.
+    int user_index = user_search(target_fd);
+    if (user_index == -1) {
+        printf("No user with file descriptor %d.\n", target_fd);
+        return;
+    }
+
+    // Unblock the user.
+    user *target_user = user_queue[user_index];
+    target_user->blocked = 0;
+
+    // Notify admin.
+    printf("User %s with fd %d not blocked from joining new chat rooms.\n",
+           target_user->username,
+           target_fd
+    );
+}
+
+// Local user typed /HELP
+void trs_handle_admin_help() {
+    printf("Commands:\n");
+    printf("/START\t\t\tOpen up chat rooms.\n");
+    printf("/STATS\t\t\tSee stats about users and chat rooms.\n");
+    printf("/END\t\t\tClose all active chat rooms.\n");
+    printf("/THROWOUT <user_fd>\tEnd user's chat room.\n");
+    printf("/BLOCK <user_fd>\tPrevent user from joining any chat room.\n");
+    printf("/UNBLOCK <user_fd>\tAllow user to join chat rooms.\n");
+    printf("/HELP\t\t\tShow this message.\n");
+}

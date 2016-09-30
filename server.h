@@ -12,6 +12,7 @@ typedef struct {
     char* username; // Their username.
     int fd; // File descriptor for their socket.
     int ready; // 1 if trying to chat, 0 otherwise.
+    int blocked; // 1 if blocked from chat by admin, 0 otherwise.
 } user;
 
 // Struct to store information about a channel where two users are talking.
@@ -54,15 +55,23 @@ void disconnect_user(int fd);
 void trs_send_chat_finish(user* u);
 void trs_send_chat_fail(int fd);
 void trs_send_connect_fail(int fd);
+void trs_send_help_acknowledge(int fd, char* data, size_t length);
 
 // Functions to handle messages from remote clients.
-void trs_handle_connect_request(int sender_fd, char* data, size_t length);
-void trs_handle_chat_request(int sender_fd, char* data, size_t length);
-void trs_handle_chat_message(int sender_fd, char* data, size_t length);
-void trs_handle_chat_finish(int sender_fd, char* data, size_t length);
-void trs_handle_binary_message(int sender_fd, char* data, size_t length);
-void trs_handle_help_request(int sender_fd, char* data, size_t length);
+void trs_handle_connect_request(int sender_fd);
+void trs_handle_chat_request(int sender_fd);
+void trs_handle_chat_message(int sender_fd);
+void trs_handle_chat_finish(int sender_fd);
+void trs_handle_binary_message(int sender_fd);
+void trs_handle_help_request(int sender_fd);
+void trs_handle_transfer_start(int sender_fd);
 
 // Functions to handle commands from local user.
 void trs_handle_admin_start(void);
+void trs_handle_admin_stats(void);
+void trs_handle_admin_end(void);
+void trs_handle_admin_throwout(void);
+void trs_handle_admin_block(void);
+void trs_handle_admin_unblock(void);
+void trs_handle_admin_help(void);
 

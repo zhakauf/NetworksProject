@@ -11,7 +11,7 @@
 
 int main(int argc, char *argv[]) {
     if (argc != 2) {
-        fprintf(stderr,"usage: ./client <trs_server_hostname>\n");
+        fprintf(stderr, "usage: ./client <trs_server_hostname>\n");
         exit(1);
     }
 
@@ -36,34 +36,31 @@ int main(int argc, char *argv[]) {
 
         // Look for available data from stdin.
         if (FD_ISSET(stdin->_fileno, &master)) {
-
-            // Zero the receiving buffer, then copy from stdin.
-            memset(&bufrcv, 0, MAXRCVSIZE);
-            fgets(bufrcv, MAXRCVSIZE, stdin);
+            fgets(stdin_buffer, MAX_TRS_DATA_LEN, stdin);
 
             // Handle possible commands.
-            if (strncmp(bufrcv, "/CONNECT", 8) == 0) {
-                trs_handle_client_connect(bufrcv);
+            if (strncmp(stdin_buffer, "/CONNECT", 8) == 0) {
+                trs_handle_client_connect();
             }
 
-            else if (strncmp(bufrcv, "/CHAT", 5) == 0) {
+            else if (strncmp(stdin_buffer, "/CHAT", 5) == 0) {
                 trs_handle_client_chat();
             }
 
-            else if (strncmp(bufrcv, "/QUIT", 5) == 0) {
+            else if (strncmp(stdin_buffer, "/QUIT", 5) == 0) {
                 trs_handle_client_quit();
             }
 
-            else if (strncmp(bufrcv, "/TRANSFER", 9) == 0) {
+            else if (strncmp(stdin_buffer, "/TRANSFER", 9) == 0) {
                 trs_handle_client_transfer();
             }
 
-            else if (strncmp(bufrcv, "/HELP", 5) == 0) {
+            else if (strncmp(stdin_buffer, "/HELP", 5) == 0) {
                 trs_handle_client_help();
             }
 
             else if (in_chat_room == 1) {
-                trs_handle_client_chat_message(bufrcv);
+                trs_handle_client_chat_message(stdin_buffer);
             }
 
             else {
@@ -81,7 +78,7 @@ int main(int argc, char *argv[]) {
                     in_chat_room = 0;
                     connected_to_trs_server = 0;
 
-                    printf("Connection with server closed\n");
+                    printf("Connection with TRS server closed. Exiting.\n");
                     close(server_fd);
                     exit(0);
                 }
@@ -91,36 +88,41 @@ int main(int argc, char *argv[]) {
 
             // Received data from TRS server.
             } else {
-                // TODO: Do I need to save the remaining data in the buffer, after parsing one message?
-                // Probably. Remaining data start of next message.
                 switch(command_byte) {
-
                     case CONNECT_ACKNOWLEDGE:
-                        trs_handle_connect_acknowledge(&trs_packet[2], length_byte);
+                        trs_handle_connect_acknowledge();
                         break;
 
                     case CHAT_ACKNOWLEDGE:
-                        trs_handle_chat_acknowledge(&trs_packet[2], length_byte);
+                        trs_handle_chat_acknowledge();
                         break;
 
                     case CHAT_MESSAGE:
-                        trs_handle_chat_message(&trs_packet[2], length_byte);
+                        trs_handle_chat_message();
                         break;
 
                     case BINARY_MESSAGE:
-                        trs_handle_binary_message(&trs_packet[2], length_byte);
+                        trs_handle_binary_message();
                         break;
 
                     case CONNECT_FAIL:
-                        trs_handle_connect_fail(&trs_packet[2], length_byte);
+                        trs_handle_connect_fail();
                         break;
 
                     case CHAT_FAIL:
-                        trs_handle_chat_fail(&trs_packet[2], length_byte);
+                        trs_handle_chat_fail();
+                        break;
+
+                    case CHAT_FINISH:
+                        trs_handle_chat_finish();
                         break;
 
                     case HELP_ACKNOWLEDGE:
-                        trs_handle_help_acknowledge(&trs_packet[2], length_byte);
+                        trs_handle_help_acknowledge();
+                        break;
+
+                    case TRANSFER_START:
+                        trs_handle_transfer_start();
                         break;
 
                     default:
@@ -130,10 +132,6 @@ int main(int argc, char *argv[]) {
             }
         }
     }
-
-    // TODO: Handle these in Ctrl-C signal instead?
-    close(server_fd);
-    return 0;
 }
 
 // Open up connection to the TRS server.
@@ -200,13 +198,11 @@ void trs_send_help_request() {
 
 // Send a TRS CHAT_FINISH type message.
 void trs_send_chat_finish() {
-    // TODO: This should be called when client types /QUIT.
-    // Also need to mark that we're no longer in a chat room.
     trs_send(server_fd, CHAT_FINISH, NULL, 0);
 }
 
 // Received CONNECT_ACKNOWLEDGE from server.
-void trs_handle_connect_acknowledge(char* data, size_t length) {
+void trs_handle_connect_acknowledge() {
     // Track that we're currently connected.
     connected_to_trs_server = 1;
 
@@ -215,7 +211,7 @@ void trs_handle_connect_acknowledge(char* data, size_t length) {
 }
 
 // Received CHAT_ACKNOWLEDGE from server.
-void trs_handle_chat_acknowledge(char* data, size_t length) {
+void trs_handle_chat_acknowledge() {
     // Track that we're currently in a chat room.
     in_chat_room = 1;
 
@@ -224,24 +220,54 @@ void trs_handle_chat_acknowledge(char* data, size_t length) {
         free(chat_partner);
     }
 
-    char* partner_username = (char*)malloc(length);
-    strncpy(partner_username, data, length);
+    // Incoming data includes null terminator.
+    char* partner_username = (char*)malloc(length_byte);
+    strncpy(partner_username, TRS_DATA, length_byte);
     chat_partner = partner_username;
 
     // Notify user that they're now chatting.
-    printf("Now chatting with %s.\n", partner_username);
+    printf("Now chatting with %s.\nType /QUIT to end chat.\n", partner_username);
 }
 
 // Received CHAT_MESSAGE from server.
-void trs_handle_chat_message(char* data, size_t length) {
+void trs_handle_chat_message() {
     // Output the chat message, if we're supposed to be in a chat room.
     if (in_chat_room) {
-        printf("%s: %s", chat_partner, data);
+        printf("%s: %s", chat_partner, TRS_DATA);
     }
 }
 
+void trs_handle_transfer_start() {
+    // Ignore this if we're not in a chatroom, or are already receiving a file.
+    if (in_chat_room != 1) {
+        printf("Received TRANSFER_START, but not in a chat room.\n");
+        return;
+    }
+    if (receiving_file == 1) {
+        printf("Received TRANSFER_START, but currently receiving file.\n");
+        return;
+    }
+
+    int i;
+    for (i = 0; i < length_byte + 2; i++) {
+        printf("%02X\n", trs_packet[i]);
+    }
+
+    size_t int_size = sizeof(int);
+    size_t filename_length = length_byte - int_size;
+
+    int file_length = -1;
+    char* filename = malloc(file_length + 1);
+
+    memcpy(&file_length, TRS_DATA, int_size);
+    memcpy(filename, &trs_packet[TRS_HEADER_LEN + int_size], length_byte - int_size);
+    filename[length_byte - int_size] = '\0';
+
+    printf("File %s size %d.\n", filename, file_length);
+}
+
 // Received CHAT_FINISH from server.
-void trs_handle_chat_finish(char* data, size_t length) {
+void trs_handle_chat_finish() {
     // Track that we're no longer in a chat room.
     in_chat_room = 0;
 
@@ -250,45 +276,43 @@ void trs_handle_chat_finish(char* data, size_t length) {
 }
 
 // Received HELP_ACKNOWLEDGE from server.
-void trs_handle_help_acknowledge(char* data, size_t length) {
+void trs_handle_help_acknowledge() {
     // Print out the content.
-    printf("%s",data);
+    printf("%s", TRS_DATA);
 }
 
 // Received CONNECT_FAIL from server.
-void trs_handle_connect_fail(char* data, size_t length) {
-    // TODO Not called from anywhere.
+void trs_handle_connect_fail() {
+    printf("Error message from server: %s", TRS_DATA);
 }
 
 // Received BINARY_MESSAGE from server.
-void trs_handle_binary_message(char* data, size_t length) {
+void trs_handle_binary_message() {
     // TODO Implement this.
     // Should have some sort of tracker for currently_receiving_file
 }
 
 // Received CHAT_FAIL from server.
-void trs_handle_chat_fail(char* data, size_t length) {
-    // TODO implement this.
-    // Server should should error message as data.
-    // Just print the error.
+void trs_handle_chat_fail() {
+    printf("Error message from server: %s", TRS_DATA);
 }
 
 // Client typed /CONNECT <username>
-void trs_handle_client_connect(char* stdinbuf) {
+void trs_handle_client_connect() {
     if (connected_to_trs_server == 1) {
         printf("You are already connected to the TRS server.\n");
         return;
     }
 
-    //Make sure a space character is before the username
-    char * space_pos = strrchr(stdinbuf, ' ');
+    // Make sure a space character is before the username
+    char * space_pos = strrchr(stdin_buffer, ' ');
     if (space_pos == NULL) {
         printf("Usage: /CONNECT <username>\n");
         return;
     }
 
     // Parse username.
-    char* newline_pos = strchr(stdinbuf, '\n');
+    char* newline_pos = strchr(stdin_buffer, '\n');
     if((newline_pos - space_pos) < 2) {
         printf("Usage: /CONNECT <username>\n");
         return;
@@ -319,6 +343,9 @@ void trs_handle_client_chat() {
 
     // Send the server a chat request.
     trs_send_chat_request();
+
+    // Notify user that we are waiting for a chat partner.
+    printf("Finding chat partner...\n");
 }
 
 // Client typed /HELP
@@ -329,12 +356,89 @@ void trs_handle_client_help() {
 
 // Client typed /QUIT
 void trs_handle_client_quit() {
-    // TODO
+    // Track that we're no longer in a chat room.
+    in_chat_room = 0;
+
+    // Notify the server that we're quitting this chat.
+    trs_send_chat_finish();
+
+    // Notify user that chat has ended.
+    printf("No longer chatting with %s.\nType /CHAT to chat with another random person.\n", chat_partner);
 }
 
 // Client typed /TRANSFER
 void trs_handle_client_transfer() {
-    // TODO: This function needs arguments. Filename to transfer.
+    if (in_chat_room != 1) {
+        printf("You are not in a chat room.\nType /CHAT to chat with a random person.\n");
+        return;
+    }
+
+    // Make sure a space character is before the filepath.
+    char * space_pos = strrchr(stdin_buffer, ' ');
+    if (space_pos == NULL) {
+        printf("Usage: /TRANSFER <filepath>\n");
+        return;
+    }
+
+    // Parse filepath.
+    char* newline_pos = strchr(stdin_buffer, '\n');
+    size_t filename_len = newline_pos - space_pos - 1;
+    if(filename_len < 1) {
+        printf("Usage: /TRANSFER <filepath>\n");
+        return;
+    }
+    *newline_pos = '\0';
+
+    char* filepath = space_pos + 1;
+    struct stat file_stat;
+    int success = stat(filepath, &file_stat);
+
+    if (success != 0) {
+        printf("Could not find file.\n");
+        return;
+    }
+
+    // Get file length in bytes.
+    int file_length = (int)file_stat.st_size;
+
+    if (file_length > MAX_FILE_TRANSFER_BYTES) {
+        printf("File too large. Max is %d MB.\n", MAX_FILE_TRANSFER_MB);
+        return;
+    }
+
+    // Begin transferring file.
+    FILE *to_transfer = NULL;
+    size_t int_size = sizeof(int);
+    int bytes_transferred = 0;
+    unsigned char transfer_buf[MAX_TRS_DATA_LEN];
+
+    to_transfer = fopen(filepath, "rb");
+    if (to_transfer == NULL) {
+        printf("Could not open file.\n");
+        return;
+    }
+
+    // TODO: Was in the middle of implementing this when got stuck on strncpy bug.
+
+    char* data = malloc(filename_len + int_size);
+    memcpy(data, filepath, filename_len);
+    memcpy(&data[filename_len], (char*)&file_length, int_size);
+
+    int i;
+    for (i = 0; i < filename_len + int_size; i++) {
+        printf("%02X\n", data[i]);
+    }
+
+    // Notify server.
+    trs_send_transfer_start(server_fd, data, filename_len + int_size);
+
+    size_t bytes_read;
+    while (bytes_transferred < file_length) {
+        bytes_read = fread(transfer_buf, 1, MAX_TRS_DATA_LEN, to_transfer);
+        bytes_transferred += bytes_read;
+    }
+
+    printf("Done buffering file.\n");
 }
 
 // Client typed something, presumed to be a message for their chat room.
@@ -347,7 +451,7 @@ void trs_handle_client_chat_message(char * data) {
         return;
     }
 
-    // Send to server.
+    // Send to server. Length includes null terminator.
     unsigned char message_length = null_term_loc - data + 1;
     trs_send_chat_message(server_fd, data, message_length);
 }
