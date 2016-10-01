@@ -15,8 +15,10 @@ char* chat_partner = NULL;
 
 // Track stats while receiving a file transfer.
 int receiving_file = 0;
-unsigned int file_bytes_expected = -1;
-unsigned int file_bytes_received = -1;
+int file_bytes_expected = -1;
+int file_bytes_received = -1;
+char* receiving_filename;
+FILE * file;
 
 // Initialization.
 void initialize_trs(char* hostname);

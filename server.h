@@ -2,7 +2,7 @@
 #define BACKLOG 10
 
 // Max number of users that can be connected at once.
-#define MAX_USERS 2
+#define MAX_USERS 10
 
 // Max number of chat channels that can be open at once.
 #define MAX_CHANNELS MAX_USERS/2

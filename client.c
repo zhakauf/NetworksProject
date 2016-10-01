@@ -248,22 +248,36 @@ void trs_handle_transfer_start() {
         return;
     }
 
-    int i;
-    for (i = 0; i < length_byte + 2; i++) {
-        printf("%02X\n", trs_packet[i]);
-    }
-
     size_t int_size = sizeof(int);
     size_t filename_length = length_byte - int_size;
 
+    // Determine file length and name.
     int file_length = -1;
-    char* filename = malloc(file_length + 1);
+    char* filename = malloc(filename_length + 1);
+    memcpy(filename, TRS_DATA, length_byte - int_size);
+    memcpy(&file_length, &trs_packet[TRS_HEADER_LEN + length_byte - int_size], int_size);
+    filename[filename_length] = '\0';
 
-    memcpy(&file_length, TRS_DATA, int_size);
-    memcpy(filename, &trs_packet[TRS_HEADER_LEN + int_size], length_byte - int_size);
-    filename[length_byte - int_size] = '\0';
+    printf("Now receiving file %s - will save as trs_%s\n", filename, filename);
 
-    printf("File %s size %d.\n", filename, file_length);
+    // Prepend trs_ to filename.
+    char *longer_filename = malloc(file_length + 5);
+    memcpy(longer_filename, "trs_", 4);
+    memcpy(&longer_filename[4], filename, filename_length);
+    longer_filename[file_length + 4] = '\0';
+
+    // Open the file we'll write to.
+    file = fopen(longer_filename, "w");
+    if (file == NULL) {
+        printf("Could not open file.\n");
+        return;
+    }
+
+    // Track that we're currently receiving a file.
+    receiving_file = 1;
+    file_bytes_expected = file_length;
+    file_bytes_received = 0;
+    receiving_filename = longer_filename;
 }
 
 // Received CHAT_FINISH from server.
@@ -288,8 +302,28 @@ void trs_handle_connect_fail() {
 
 // Received BINARY_MESSAGE from server.
 void trs_handle_binary_message() {
-    // TODO Implement this.
-    // Should have some sort of tracker for currently_receiving_file
+    if (receiving_file == 0) {
+        printf("Ignoring BINARY_MESSAGE because we are not currently receiving a file.\n");
+        return;
+    }
+
+    size_t written;
+    written = fwrite(TRS_DATA, 1, length_byte, file);
+    if (written != length_byte) {
+        printf("Wrote different amount that received.\n");
+    }
+
+    file_bytes_received += written;
+
+    if (file_bytes_received == file_bytes_expected) {
+        printf("Done receiving %s\n", receiving_filename);
+        free(receiving_filename);
+
+        receiving_file = 0;
+        file_bytes_expected = -1;
+        file_bytes_received = -1;
+        fclose(file);
+    }
 }
 
 // Received CHAT_FAIL from server.
@@ -418,27 +452,22 @@ void trs_handle_client_transfer() {
         return;
     }
 
-    // TODO: Was in the middle of implementing this when got stuck on strncpy bug.
-
+    // Notify server with TRANSFER_START message.
     char* data = malloc(filename_len + int_size);
     memcpy(data, filepath, filename_len);
     memcpy(&data[filename_len], (char*)&file_length, int_size);
-
-    int i;
-    for (i = 0; i < filename_len + int_size; i++) {
-        printf("%02X\n", data[i]);
-    }
-
-    // Notify server.
     trs_send_transfer_start(server_fd, data, filename_len + int_size);
 
+    // Send BINARY_MESSAGE messages until we've sent the whole file.
     size_t bytes_read;
     while (bytes_transferred < file_length) {
         bytes_read = fread(transfer_buf, 1, MAX_TRS_DATA_LEN, to_transfer);
         bytes_transferred += bytes_read;
+        trs_send_binary_message(server_fd, transfer_buf, bytes_read);
     }
 
-    printf("Done buffering file.\n");
+    printf("Done transferring %s.\n", filepath);
+    fclose(to_transfer);
 }
 
 // Client typed something, presumed to be a message for their chat room.

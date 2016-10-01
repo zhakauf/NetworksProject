@@ -260,8 +260,10 @@ void start_server() {
 int user_search(int fd) {
     int i;
     for(i = 0; i < MAX_USERS; i++) {
-        if ((user_queue[i] != NULL) && (fd == user_queue[i]->fd)) {
-            return i;
+        if (user_queue[i] != NULL) {
+            if (user_queue[i]->fd == fd) {
+                return i;
+            }
         }
     }
 
@@ -277,7 +279,7 @@ int channel_search_users(user* u_one, user* u_two) {
             if ((channel_queue[i]->u_one == u_one)  || (channel_queue[i]->u_two == u_one)) {
                 return i;
             }
-            if ((channel_queue[i]->u_one == u_two)  || (channel_queue[i]->u_two = u_two)) {
+            if ((channel_queue[i]->u_one == u_two)  || (channel_queue[i]->u_two == u_two)) {
                 return i;
             }
         }
@@ -383,6 +385,12 @@ int add_channel(user *u_one, user *u_two) {
 
     // Add the new channel to the queue and return the index.
     if (empty_index != -1) {
+        if (u_one == NULL) {
+            printf("u_one NULL?!\n");
+        }
+        if (u_two == NULL) {
+            printf("u_two NULL?!\n");
+        }
         channel_queue[empty_index] = new_channel(u_one, u_two);
         return empty_index;
     }
@@ -397,6 +405,13 @@ channel * new_channel(user *u_one, user *u_two) {
     c->u_one = u_one;
     c->u_two = u_two;
     c->bytes_sent = 0;
+
+    if (c->u_one == NULL) {
+        printf("u_one NULL?!\n");
+    }
+    if (c->u_two == NULL) {
+        printf("u_two NULL?!\n");
+    }
 
     return c;
 }
@@ -430,7 +445,8 @@ void disconnect_user(int fd) {
     user * to_disconnect = user_queue[user_index];
 
     // If this user is in a channel, notify their partner that the chat is over, and free the channel.
-    int channel_index = channel_search_fd(to_disconnect->fd);
+    int channel_index = channel_search_fd(fd);
+
     if (channel_index != -1) {
         user * partner;
         channel * room = channel_queue[channel_index];
@@ -582,6 +598,7 @@ void trs_handle_chat_request(int sender_fd) {
     if (new_channel == -1) {
         trs_send_chat_fail(sender_fd);
         trs_send_chat_fail(available->fd);
+        return;
     }
 
     // Notify both users that they are in a chat.
@@ -634,11 +651,6 @@ void trs_handle_transfer_start(int sender_fd) {
         recipient_fd = room->u_one->fd;
     }
 
-    int i;
-    for (i = 0; i < length_byte + 2; i++) {
-        printf("%02X\n", trs_packet[i]);
-    }
-
     // Forward the message.
     trs_send_transfer_start(recipient_fd, TRS_DATA, length_byte);
 }
@@ -672,7 +684,28 @@ void trs_handle_chat_finish(int sender_fd) {
 
 // Received BINARY_MESSAGE from a client.
 void trs_handle_binary_message(int sender_fd) {
-    // TODO
+    // Make sure they're in a channel.
+    int channel_index = channel_search_fd(sender_fd);
+
+    // Ignore chat message if sender isn't in a channel.
+    if (channel_index == -1) {
+        return;
+    }
+
+    // Determine the recipient of this chat message.
+    int recipient_fd;
+    channel* room = channel_queue[channel_index];
+    if (room->u_one->fd == sender_fd) {
+        recipient_fd = room->u_two->fd;
+    } else {
+        recipient_fd = room->u_one->fd;
+    }
+
+    // Forward the message.
+    trs_send_binary_message(recipient_fd, TRS_DATA, length_byte);
+
+    // Update the data usage in this channel.
+    room->bytes_sent = room->bytes_sent + (length_byte + 2);
 }
 
 // Local user typed /START
@@ -736,7 +769,7 @@ void trs_handle_admin_stats() {
 
         if (i_channel != NULL) {
             if (active_channels == 0) {
-                printf("\nActive channels:\n");
+                printf("Active channels:\n");
             }
 
             printf("\t%d  u_one:%s  u_one_fd:%d  u_two:%s  u_two_fd:%d  data_used:%lu\n",
