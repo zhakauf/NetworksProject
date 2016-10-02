@@ -25,7 +25,7 @@ int main(int argc, char *argv[]) {
 
         // Add fd for server and stdio to fds.
         FD_SET(server_fd, &master);
-        FD_SET(stdin->_fileno, &master);
+        FD_SET(stdin->_file, &master);
     
         // Select for available fds.
         if(select(server_fd+1, &master, NULL, NULL, NULL) == -1)
@@ -35,7 +35,7 @@ int main(int argc, char *argv[]) {
         }
 
         // Look for available data from stdin.
-        if (FD_ISSET(stdin->_fileno, &master)) {
+        if (FD_ISSET(stdin->_file, &master)) {
             fgets(stdin_buffer, MAX_TRS_DATA_LEN, stdin);
 
             // Handle possible commands.
@@ -174,7 +174,7 @@ void initialize_trs(char* hostname) {
     freeaddrinfo(servinfo);
 
     // Set socket fd, and stdin fd to non-blocking.
-    fcntl(stdin->_fileno, F_SETFL, O_NONBLOCK);
+    fcntl(stdin->_file, F_SETFL, O_NONBLOCK);
     fcntl(server_fd, F_SETFL, O_NONBLOCK);
 
     // Prompt them to get started.
@@ -444,7 +444,7 @@ void trs_handle_client_transfer() {
     FILE *to_transfer = NULL;
     size_t int_size = sizeof(int);
     int bytes_transferred = 0;
-    unsigned char transfer_buf[MAX_TRS_DATA_LEN];
+    char transfer_buf[MAX_TRS_DATA_LEN];
 
     to_transfer = fopen(filepath, "rb");
     if (to_transfer == NULL) {

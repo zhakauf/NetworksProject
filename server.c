@@ -42,7 +42,7 @@ int main(void) {
             if (FD_ISSET(i_fd, &read_fds)) {
 
                 // Handle stdin message.
-                if(i_fd == stdin->_fileno) {
+                if(i_fd == stdin->_file) {
                     fgets(stdin_buffer, MAX_TRS_DATA_LEN, stdin);
 
                     // User typed /START
@@ -174,17 +174,17 @@ int main(void) {
 // Start listening for admin commands.
 void initialize_trs() {
     // Set stdin fd to nonblocking.
-    fcntl(stdin->_fileno, F_SETFL, O_NONBLOCK);
+    fcntl(stdin->_file, F_SETFL, O_NONBLOCK);
 
     // Zero the master and temp file descriptor sets.
     FD_ZERO(&master);
     FD_ZERO(&read_fds);
 
     // Add stdin fd to master fd_set.
-    FD_SET(stdin->_fileno, &master);
+    FD_SET(stdin->_file, &master);
 
     // Keep track of the biggest file descriptor.
-    fdmax = stdin->_fileno;
+    fdmax = stdin->_file;
 
     printf("\nTRS Started. \nType /START to open chat rooms.\nType /HELP for other commands.\n");
 }
