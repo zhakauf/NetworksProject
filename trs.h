@@ -69,18 +69,6 @@ struct addrinfo hints;
 fd_set master;
 fd_set read_fds;
 
-
-// Get sockaddr, IPv4 or IPv6:
-// Borrowed directly from Beej: http://beej.us/guide/bgnet/output/html/singlepage/bgnet.html
-void *get_in_addr(struct sockaddr *sa)
-{
-    if (sa->sa_family == AF_INET) {
-        return &(((struct sockaddr_in*)sa)->sin_addr);
-    }
-
-    return &(((struct sockaddr_in6*)sa)->sin6_addr);
-}
-
 // Generalized function for sending any TRS message.
 void trs_send(int destination_fd, unsigned char message_type, char* data, unsigned char data_length) {
     // TRS header is 2 bytes.
@@ -148,10 +136,20 @@ int trs_recv(int sender_fd){
     }
 
     // Receive the data bytes of a TRS packet.
+
+    printf("Length byte:\t%zu\n", length_byte);
     if(length_byte > 0) {
-        if((bytes_received = recv(sender_fd, &trs_packet[2], length_byte, 0)) < length_byte) {
-            printf("ERROR: Received fewer bytes than requested.\n");
-            return bytes_received;
+        unsigned int total_received = 0;
+        printf("Total received:\t%u\n", total_received);
+        while (total_received < length_byte) {
+            bytes_received = recv(sender_fd, &trs_packet[total_received+2], length_byte-total_received, 0) ;
+            printf("Bytes received:\t%d\n", bytes_received);
+
+            if (bytes_received < 0) {
+                printf("L 0, exit.\n");
+                break;
+            }
+            total_received = total_received + bytes_received;
         }
     }
 
