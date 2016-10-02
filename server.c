@@ -10,7 +10,6 @@
 #include "server.h"
 
 int main(void) {
-
     // Start monitoring stdin, and give the admin a prompt.
     initialize_trs();
 
@@ -217,6 +216,14 @@ void start_server() {
         }
 
         setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
+
+
+        // Set a min timeout before erroring.
+        struct timeval tv;
+        tv.tv_sec = 30;
+        tv.tv_usec = 0;
+        setsockopt(listener, SOL_SOCKET, SO_RCVTIMEO, (char*)&tv, sizeof(tv));
+        setsockopt(listener, SOL_SOCKET, SO_SNDTIMEO, (char*)&tv, sizeof(tv));
 
         if (bind(listener, p->ai_addr, p->ai_addrlen) < 0) {
             close(listener);
@@ -511,7 +518,7 @@ void trs_send_chat_acknowledge(int fd, user* chat_partner) {
     char* null_term_loc = strchr(chat_partner->username, '\0');
 
     // Length includes null terminator.
-    unsigned char username_length = null_term_loc - chat_partner->username + 1;
+    size_t username_length = null_term_loc - chat_partner->username + 1;
 
     trs_send(fd, CHAT_ACKNOWLEDGE, chat_partner->username, username_length);
 }
@@ -520,9 +527,9 @@ void trs_send_chat_acknowledge(int fd, user* chat_partner) {
 void trs_handle_connect_request(int sender_fd) {
 
     // The only data in a connect request is the username.
-    char* username = (char*)malloc(length_byte + 1);
-    strncpy(username, TRS_DATA, length_byte);
-    username[length_byte] = '\0';
+    char* username = (char*)malloc(length_bytes + 1);
+    strncpy(username, TRS_DATA, length_bytes);
+    username[length_bytes] = '\0';
 
     // Try to add a new chat user.
     int success = add_user(sender_fd, username);
@@ -546,7 +553,7 @@ void trs_handle_help_request(int sender_fd) {
 /HELP\t\t\tReprint this help message.\n\0";
 
     // Length does not include null terminator.
-    int len = strrchr(data, '\0') - data;
+    size_t len = strrchr(data, '\0') - data;
 
     trs_send_help_acknowledge(sender_fd, data, len);
 }
@@ -627,10 +634,10 @@ void trs_handle_chat_message(int sender_fd) {
     }
 
     // Forward the chat message.
-    trs_send_chat_message(recipient_fd, TRS_DATA, length_byte);
+    trs_send_chat_message(recipient_fd, TRS_DATA, length_bytes);
 
     // Update the data usage in this channel.
-    room->bytes_sent = room->bytes_sent + (length_byte + 2);
+    room->bytes_sent = room->bytes_sent + (length_bytes + TRS_HEADER_LEN);
 }
 
 void trs_handle_transfer_start(int sender_fd) {
@@ -652,7 +659,7 @@ void trs_handle_transfer_start(int sender_fd) {
     }
 
     // Forward the message.
-    trs_send_transfer_start(recipient_fd, TRS_DATA, length_byte);
+    trs_send_transfer_start(recipient_fd, TRS_DATA, length_bytes);
 }
 
 // Received CHAT_FINISH from a client.
@@ -702,10 +709,10 @@ void trs_handle_binary_message(int sender_fd) {
     }
 
     // Forward the message.
-    trs_send_binary_message(recipient_fd, TRS_DATA, length_byte);
+    trs_send_binary_message(recipient_fd, TRS_DATA, length_bytes);
 
     // Update the data usage in this channel.
-    room->bytes_sent = room->bytes_sent + (length_byte + 2);
+    room->bytes_sent = room->bytes_sent + (length_bytes + TRS_HEADER_LEN);
 }
 
 // Local user typed /START

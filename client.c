@@ -173,6 +173,13 @@ void initialize_trs(char* hostname) {
 
     freeaddrinfo(servinfo);
 
+    // Timeout on recv, send
+    struct timeval tv;
+    tv.tv_sec = 10;
+    tv.tv_usec = 0;
+    setsockopt(server_fd, SOL_SOCKET, SO_RCVTIMEO, (char*)&tv, sizeof(tv));
+    setsockopt(server_fd, SOL_SOCKET, SO_SNDTIMEO, (char*)&tv, sizeof(tv));
+
     // Set socket fd, and stdin fd to non-blocking.
     fcntl(stdin->_file, F_SETFL, O_NONBLOCK);
     fcntl(server_fd, F_SETFL, O_NONBLOCK);
@@ -182,7 +189,7 @@ void initialize_trs(char* hostname) {
 }
 
 // Send a TRS CONNECT_REQUEST type message.
-void trs_send_connect_request(char* username, unsigned char username_length) {
+void trs_send_connect_request(char* username, size_t username_length) {
     trs_send(server_fd, CONNECT_REQUEST, username, username_length);
 }
 
@@ -221,8 +228,8 @@ void trs_handle_chat_acknowledge() {
     }
 
     // Incoming data includes null terminator.
-    char* partner_username = (char*)malloc(length_byte);
-    strncpy(partner_username, TRS_DATA, length_byte);
+    char* partner_username = (char*)malloc(length_bytes);
+    strncpy(partner_username, TRS_DATA, length_bytes);
     chat_partner = partner_username;
 
     // Notify user that they're now chatting.
@@ -249,16 +256,16 @@ void trs_handle_transfer_start() {
     }
 
     size_t int_size = sizeof(int);
-    size_t filename_length = length_byte - int_size;
+    size_t filename_length = length_bytes - int_size;
 
     // Determine file length and name.
     int file_length = -1;
     char* filename = malloc(filename_length + 1);
-    memcpy(filename, TRS_DATA, length_byte - int_size);
-    memcpy(&file_length, &trs_packet[TRS_HEADER_LEN + length_byte - int_size], int_size);
+    memcpy(filename, TRS_DATA, length_bytes - int_size);
+    memcpy(&file_length, &trs_packet[TRS_HEADER_LEN + length_bytes - int_size], int_size);
     filename[filename_length] = '\0';
 
-    printf("Now receiving file %s - will save as trs_%s\n", filename, filename);
+    printf("Now receiving file %s - will save as trs_%s.\n", filename, filename);
 
     // Prepend trs_ to filename.
     char *longer_filename = malloc(file_length + 5);
@@ -308,15 +315,15 @@ void trs_handle_binary_message() {
     }
 
     size_t written;
-    written = fwrite(TRS_DATA, 1, length_byte, file);
-    if (written != length_byte) {
+    written = fwrite(TRS_DATA, 1, length_bytes, file);
+    if (written != length_bytes) {
         printf("Wrote different amount that received.\n");
     }
 
     file_bytes_received += written;
 
     if (file_bytes_received == file_bytes_expected) {
-        printf("Done receiving %s\n", receiving_filename);
+        printf("Done receiving %s.\n", receiving_filename);
         free(receiving_filename);
 
         receiving_file = 0;
@@ -452,6 +459,8 @@ void trs_handle_client_transfer() {
         return;
     }
 
+    printf("Starting to transfer %s.\n", filepath);
+
     // Notify server with TRANSFER_START message.
     char* data = malloc(filename_len + int_size);
     memcpy(data, filepath, filename_len);
@@ -460,10 +469,13 @@ void trs_handle_client_transfer() {
 
     // Send BINARY_MESSAGE messages until we've sent the whole file.
     size_t bytes_read;
+    int sent;
     while (bytes_transferred < file_length) {
         bytes_read = fread(transfer_buf, 1, MAX_TRS_DATA_LEN, to_transfer);
+        sent = trs_send_binary_message(server_fd, transfer_buf, bytes_read);
         bytes_transferred += bytes_read;
-        trs_send_binary_message(server_fd, transfer_buf, bytes_read);
+        useconds_t millis = 10;
+        usleep(1000*millis);
     }
 
     printf("Done transferring %s.\n", filepath);
@@ -481,6 +493,6 @@ void trs_handle_client_chat_message(char * data) {
     }
 
     // Send to server. Length includes null terminator.
-    unsigned char message_length = null_term_loc - data + 1;
+    size_t message_length = null_term_loc - data + 1;
     trs_send_chat_message(server_fd, data, message_length);
 }

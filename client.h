@@ -24,7 +24,7 @@ FILE * file;
 void initialize_trs(char* hostname);
 
 // Send messages to the server.
-void trs_send_connect_request(char* username, unsigned char username_length);
+void trs_send_connect_request(char* username, size_t username_length);
 void trs_send_chat_request(void);
 void trs_send_help_request(void);
 void trs_send_chat_finish(void);
