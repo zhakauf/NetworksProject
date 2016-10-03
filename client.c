@@ -450,7 +450,7 @@ void trs_handle_client_transfer() {
     // Begin transferring file.
     FILE *to_transfer = NULL;
     size_t int_size = sizeof(int);
-    int bytes_transferred = 0;
+    unsigned int bytes_transferred = 0;
     char transfer_buf[MAX_TRS_DATA_LEN];
 
     to_transfer = fopen(filepath, "rb");
@@ -470,12 +470,24 @@ void trs_handle_client_transfer() {
     // Send BINARY_MESSAGE messages until we've sent the whole file.
     size_t bytes_read;
     int sent;
+    printf("Transfer file length %d.\n", file_length);
     while (bytes_transferred < file_length) {
-        bytes_read = fread(transfer_buf, 1, MAX_TRS_DATA_LEN, to_transfer);
-        sent = trs_send_binary_message(server_fd, transfer_buf, bytes_read);
-        bytes_transferred += bytes_read;
-        useconds_t millis = 10;
+        // Delay in between sending chunks guaranteed.
+        useconds_t millis = 20;
         usleep(1000*millis);
+
+        bytes_read = fread(transfer_buf, 1, MAX_TRS_DATA_LEN, to_transfer);
+        printf("Read %zu bytes.\n", bytes_read);
+
+        sent = 0;
+        while (sent < bytes_read) {
+            usleep(1000*5*millis);
+            sent = sent + trs_send_binary_message(server_fd, &transfer_buf[sent], bytes_read);
+            printf("Send %zu bytes.\n", sent);
+        }
+
+        bytes_transferred += bytes_read;
+        printf("Bytes transferred now %du");
     }
 
     printf("Done transferring %s.\n", filepath);
