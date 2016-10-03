@@ -1,4 +1,4 @@
-﻿/*
+/*
  * server.c
  * TRS Server
  *
