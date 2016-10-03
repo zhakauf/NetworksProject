@@ -17,7 +17,7 @@
 #define TRS_HEADER_LEN (1+SIZE_T_LEN)
 
 // Maximum allowable TRS packet size, including 2 byte header.
-#define MAX_TRS_PACKET_LEN (size_t)16384
+#define MAX_TRS_PACKET_LEN (size_t)8192
 
 // Maximum amount of data a single TRS packet can contain.
 #define MAX_TRS_DATA_LEN (MAX_TRS_PACKET_LEN-TRS_HEADER_LEN)
