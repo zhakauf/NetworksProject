@@ -487,7 +487,7 @@ void trs_handle_client_transfer() {
         }
 
         bytes_transferred += bytes_read;
-        printf("Bytes transferred now %du");
+        printf("Bytes transferred now %du", bytes_transferred);
     }
 
     printf("Done transferring %s.\n", filepath);
