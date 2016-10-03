@@ -473,7 +473,7 @@ void trs_handle_client_transfer() {
     printf("Transfer file length %d.\n", file_length);
     while (bytes_transferred < file_length) {
         // Delay in between sending chunks guaranteed.
-        useconds_t millis = 5;
+        useconds_t millis = 10;
         usleep(1000*millis);
 
         bytes_read = fread(transfer_buf, 1, MAX_TRS_DATA_LEN, to_transfer);
