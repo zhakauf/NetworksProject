@@ -4,3 +4,4 @@ server
 .idea/
 .vagrant/
 machines/
+trs_*
