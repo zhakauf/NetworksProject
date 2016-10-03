@@ -96,7 +96,7 @@ int trs_send(int destination_fd, unsigned char message_type, char* data, size_t 
     size_t sent;
     while (total_sent < total_len) {
         sent = send(destination_fd, bufsend, total_len, 0);
-        if (send > 0) {
+        if (sent > 0) {
             total_sent += sent;
         }
     }
