@@ -317,7 +317,7 @@ void trs_handle_binary_message() {
     size_t written;
     written = fwrite(TRS_DATA, 1, length_bytes, file);
     if (written != length_bytes) {
-        printf("Wrote different amount that received.\n");
+        printf("Wrote different amount than received.\n");
     }
 
     file_bytes_received += written;
@@ -474,7 +474,7 @@ void trs_handle_client_transfer() {
         bytes_read = fread(transfer_buf, 1, MAX_TRS_DATA_LEN, to_transfer);
         sent = trs_send_binary_message(server_fd, transfer_buf, bytes_read);
         bytes_transferred += bytes_read;
-        useconds_t millis = 10;
+        useconds_t millis = 100;
         usleep(1000*millis);
     }
 
