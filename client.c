@@ -474,7 +474,7 @@ void trs_handle_client_transfer() {
         bytes_read = fread(transfer_buf, 1, MAX_TRS_DATA_LEN, to_transfer);
         sent = trs_send_binary_message(server_fd, transfer_buf, bytes_read);
         bytes_transferred += bytes_read;
-        useconds_t millis = 10;
+        useconds_t millis = 500;
         usleep(1000*millis);
     }
 
