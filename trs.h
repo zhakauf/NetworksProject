@@ -49,6 +49,14 @@
 #define HELP_ACKNOWLEDGE 0x71
 #define TRANSFER_START 0x72
 
+//for portability
+#ifdef __APPLE__
+    #define stdinfile stdin->_file
+#else
+    #define stdinfile stdin->_fileno
+#endif
+
+
 // Outgoing data buffer.
 char bufsend[MAX_TRS_PACKET_LEN];
 

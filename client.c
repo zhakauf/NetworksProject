@@ -25,7 +25,7 @@ int main(int argc, char *argv[]) {
 
         // Add fd for server and stdio to fds.
         FD_SET(server_fd, &master);
-        FD_SET(stdin->_file, &master);
+        FD_SET(stdinfile, &master);
     
         // Select for available fds.
         if(select(server_fd+1, &master, NULL, NULL, NULL) == -1)
@@ -35,7 +35,7 @@ int main(int argc, char *argv[]) {
         }
 
         // Look for available data from stdin.
-        if (FD_ISSET(stdin->_file, &master)) {
+        if (FD_ISSET(stdinfile, &master)) {
             fgets(stdin_buffer, MAX_TRS_DATA_LEN, stdin);
 
             // Handle possible commands.
@@ -181,7 +181,7 @@ void initialize_trs(char* hostname) {
     setsockopt(server_fd, SOL_SOCKET, SO_SNDTIMEO, (char*)&tv, sizeof(tv));
 
     // Set socket fd, and stdin fd to non-blocking.
-    fcntl(stdin->_file, F_SETFL, O_NONBLOCK);
+    fcntl(stdinfile, F_SETFL, O_NONBLOCK);
     fcntl(server_fd, F_SETFL, O_NONBLOCK);
 
     // Prompt them to get started.
