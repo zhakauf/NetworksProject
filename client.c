@@ -483,11 +483,11 @@ void trs_handle_client_transfer() {
         while (sent < bytes_read) {
             usleep(1000*5*millis);
             sent = sent + trs_send_binary_message(server_fd, &transfer_buf[sent], bytes_read);
-            printf("Send %du bytes.\n", sent);
+            printf("Send %d bytes.\n", sent);
         }
 
         bytes_transferred += bytes_read;
-        printf("Bytes transferred now %du", bytes_transferred);
+        printf("Bytes transferred now %d\n", bytes_transferred);
     }
 
     printf("Done transferring %s.\n", filepath);
