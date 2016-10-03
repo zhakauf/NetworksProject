@@ -94,8 +94,11 @@ int trs_send(int destination_fd, unsigned char message_type, char* data, size_t 
     // Send it off.
     size_t total_sent = 0;
     size_t sent;
+    size_t left;
     while (total_sent < total_len) {
-        sent = send(destination_fd, &bufsend[total_sent], total_len - total_sent, 0);
+        left = total_len - total_sent;
+        printf("%zu left\n", left);
+        sent = send(destination_fd, &bufsend[total_sent], left, 0);
         if (sent > 0) {
             total_sent = total_sent + sent;
             printf("Sent %zu out of %zu bytes\n", sent, total_len);
