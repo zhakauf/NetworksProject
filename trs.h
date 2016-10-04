@@ -33,7 +33,7 @@
 #define SERVER_PORT "9034"
 
 // Enable for speedier development.
-#define DEBUG 1
+#define DEBUG 0
 
 // TRS message types.
 #define CONNECT_REQUEST 0x61

@@ -9,7 +9,6 @@
 #include "trs.h"
 #include "server.h"
 
-//TODO: Make sure that if you're trying to connect to an unknown server, the error that pops up is ours. Right now it's some socket error.
 //TODO: Make sure that the server starts on /START. Change that debug flag. Right now /START literally quits the server and that's not great haha.
 //TODO: Get file transfer to work without error
 //TODO: Have a drink and play some overwatch
