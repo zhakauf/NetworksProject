@@ -469,26 +469,11 @@ void trs_handle_client_transfer() {
 
     // Send BINARY_MESSAGE messages until we've sent the whole file.
     size_t bytes_read;
-    unsigned int sent;
     printf("Transfer file length %d.\n", file_length);
     while (bytes_transferred < file_length) {
-        // Delay in between sending chunks guaranteed.
-        useconds_t millis = 10;
-        usleep(1000*millis);
-
         bytes_read = fread(transfer_buf, 1, MAX_TRS_DATA_LEN, to_transfer);
-        printf("Read %zu bytes.\n", bytes_read);
-
-        sent = 0;
-        sent = trs_send_binary_message(server_fd, &transfer_buf[sent], bytes_read);
-        while (sent < bytes_read) {
-            usleep(1000*5*millis);
-            sent = sent + trs_send_binary_message(server_fd, &transfer_buf[sent], bytes_read);
-            printf("Send %d bytes.\n", sent);
-        }
-
+        trs_send_binary_message(server_fd, transfer_buf, bytes_read);
         bytes_transferred += bytes_read;
-        printf("Bytes transferred now %d\n", bytes_transferred);
     }
 
     printf("Done transferring %s.\n", filepath);
