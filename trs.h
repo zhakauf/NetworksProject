@@ -17,7 +17,7 @@
 #define TRS_HEADER_LEN (1+SIZE_T_LEN)
 
 // Maximum allowable TRS packet size, including 2 byte header.
-#define MAX_TRS_PACKET_LEN (size_t)16000
+#define MAX_TRS_PACKET_LEN (size_t)32768
 
 // Maximum amount of data a single TRS packet can contain.
 #define MAX_TRS_DATA_LEN (MAX_TRS_PACKET_LEN-TRS_HEADER_LEN)
@@ -104,11 +104,11 @@ int trs_send(int destination_fd, unsigned char message_type, char* data, size_t 
             total_sent = total_sent + sent;
         }
 
-        useconds_t millis = 2;
+        useconds_t millis = 15;
         usleep(1000*millis);
         if (total_sent < total_len) {
             printf("Extra wait.\n");
-            millis = 10;
+            millis = 100;
             usleep(1000*millis);
         }
     }
