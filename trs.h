@@ -104,11 +104,11 @@ int trs_send(int destination_fd, unsigned char message_type, char* data, size_t 
             total_sent = total_sent + sent;
         }
 
-        useconds_t millis = 15;
+        useconds_t millis = 20;
         usleep(1000*millis);
         if (total_sent < total_len) {
             printf("Extra wait.\n");
-            millis = 100;
+            millis = 75;
             usleep(1000*millis);
         }
     }
