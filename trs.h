@@ -99,7 +99,7 @@ int trs_send(int destination_fd, unsigned char message_type, char* data, size_t 
         left = total_len - total_sent;
         printf("%zu left to send.\n", left);
         sent = send(destination_fd, &bufsend[total_sent], left, 0);
-        printf("%z just sent.\n", sent);
+        printf("%zd just sent.\n", sent);
         if (sent > 0) {
             total_sent = total_sent + sent;
         }
