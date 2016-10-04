@@ -5,3 +5,4 @@ server
 .vagrant/
 machines/
 trs_*
+dummy*
