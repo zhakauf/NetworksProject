@@ -469,7 +469,6 @@ void trs_handle_client_transfer() {
 
     // Send BINARY_MESSAGE messages until we've sent the whole file.
     size_t bytes_read;
-    printf("Transfer file length %d.\n", file_length);
     while (bytes_transferred < file_length) {
         bytes_read = fread(transfer_buf, 1, MAX_TRS_DATA_LEN, to_transfer);
         trs_send_binary_message(server_fd, transfer_buf, bytes_read);

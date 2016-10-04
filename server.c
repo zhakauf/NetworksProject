@@ -9,10 +9,6 @@
 #include "trs.h"
 #include "server.h"
 
-//TODO: Make sure that the server starts on /START. Change that debug flag. Right now /START literally quits the server and that's not great haha.
-//TODO: Get file transfer to work without error
-//TODO: Have a drink and play some overwatch
-
 int main(void) {
     // Start monitoring stdin, and give the admin a prompt.
     initialize_trs();
