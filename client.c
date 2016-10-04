@@ -146,7 +146,7 @@ void initialize_trs(char* hostname) {
     int rv;
     struct addrinfo *servinfo;
     if ((rv = getaddrinfo(hostname, SERVER_PORT, &hints, &servinfo)) != 0) {
-        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
+        printf("Could not reach host. Exiting.\n");
         exit(1);
     }
 

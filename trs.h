@@ -97,17 +97,14 @@ int trs_send(int destination_fd, unsigned char message_type, char* data, size_t 
     size_t left;
     while (total_sent < total_len) {
         left = total_len - total_sent;
-        printf("%zu left to send.\n", left);
         sent = send(destination_fd, &bufsend[total_sent], left, 0);
-        printf("%zd just sent.\n", sent);
         if (sent > 0) {
             total_sent = total_sent + sent;
         }
 
-        useconds_t millis = 25;
+        useconds_t millis = 30;
         usleep(1000*millis);
         if (total_sent < total_len) {
-            printf("Extra wait.\n");
             millis = 75;
             usleep(1000*millis);
         }
